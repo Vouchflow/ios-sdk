@@ -42,14 +42,15 @@ public struct VouchflowConfig {
 
     /// SHA-256 hash of the Vouchflow leaf TLS certificate's SubjectPublicKeyInfo (DER, base64-encoded).
     ///
-    /// **TODO:** Replace with the real pin once the VPS is configured with Caddy.
+    /// SHA-256 hash of the Let's Encrypt intermediate CA's SubjectPublicKeyInfo serving
+    /// api.vouchflow.dev. Pinned at intermediate (not leaf) level to survive Fly.io's
+    /// 60-day Let's Encrypt leaf rotations without requiring an SDK release.
     /// In debug builds, placeholder values disable pinning with a runtime warning.
-    /// In release builds, placeholder values cause all requests to fail — do not ship without real pins.
+    /// In release builds, placeholder values cause all requests to fail.
     public let leafCertificatePin: String
 
-    /// SHA-256 hash of the Vouchflow intermediate CA's SubjectPublicKeyInfo (DER, base64-encoded).
-    ///
-    /// **TODO:** Replace with the real pin once the VPS is configured with Caddy.
+    /// SHA-256 hash of ISRG Root X1 (Let's Encrypt root CA). Essentially permanent —
+    /// serves as a safety net if the intermediate CA is ever rotated.
     public let intermediateCertificatePin: String
 
     public init(
@@ -57,8 +58,8 @@ public struct VouchflowConfig {
         customerId: String,
         environment: VouchflowEnvironment = .production,
         keychainAccessGroup: String? = nil,
-        leafCertificatePin: String = "TODO-leaf-pin-sha256",
-        intermediateCertificatePin: String = "TODO-intermediate-pin-sha256"
+        leafCertificatePin: String = "iFvwVyJSxnQdyaUvUERIf+8qk7gRze3612JMwoO3zdU=",
+        intermediateCertificatePin: String = "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
     ) {
         self.apiKey = apiKey
         self.customerId = customerId

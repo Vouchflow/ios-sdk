@@ -161,12 +161,15 @@ final class VerificationManager {
                 case .userCancel:
                     throw VouchflowError.biometricCancelled(sessionId: sessionId)
 
-                case .biometryNotAvailable, .biometryNotEnrolled:
+                case .passcodeNotSet:
+                    // Device has neither biometrics nor a passcode configured — cannot authenticate.
                     throw VouchflowError.biometricUnavailable
 
-                case .biometryLockout:
-                    // Biometry is locked out — the user must authenticate via passcode in Settings.
-                    throw VouchflowError.biometricUnavailable
+                case .biometryNotAvailable, .biometryNotEnrolled, .biometryLockout:
+                    // With .deviceOwnerAuthentication, iOS falls back to passcode automatically,
+                    // so these cases are rare. Treat as failed rather than unavailable so the
+                    // user can retry (the passcode path may still be available).
+                    throw VouchflowError.biometricFailed(sessionId: sessionId)
 
                 default:
                     throw VouchflowError.biometricFailed(sessionId: sessionId)
@@ -178,10 +181,14 @@ final class VerificationManager {
     }
 
     /// Async wrapper for `LAContext.evaluatePolicy` (native async API requires iOS 16).
+    ///
+    /// Uses `.deviceOwnerAuthentication` so the user can authenticate with Face ID, Touch ID,
+    /// or the device passcode — iOS presents passcode automatically if biometrics are unavailable
+    /// or fail. This avoids hard-blocking users who have a passcode but no biometric enrolled.
     private func evaluateBiometric(context: LAContext) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             context.evaluatePolicy(
-                .deviceOwnerAuthenticationWithBiometrics,
+                .deviceOwnerAuthentication,
                 localizedReason: "Verify your identity"
             ) { success, error in
                 if success {

@@ -26,7 +26,7 @@ struct CompleteVerificationRequest: Encodable {
 
 struct CompleteVerificationResponse: Decodable {
     let verified: Bool
-    let confidence: String
+    let confidence: String?
     let sessionState: String
     let deviceToken: String
     let deviceAgeDays: Int

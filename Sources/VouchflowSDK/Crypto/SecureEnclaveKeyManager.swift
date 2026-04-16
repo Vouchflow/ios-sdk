@@ -15,14 +15,15 @@ final class SecureEnclaveKeyManager {
 
     /// Generates a new keypair in the Secure Enclave.
     ///
-    /// - Returns: The new private key and the uncompressed public key as a base64 string
-    ///   (65-byte x963 format: `04 || x || y`).
+    /// - Returns: The new private key and the public key as a base64 string in
+    ///   SubjectPublicKeyInfo DER format. This matches Android's `PublicKey.encoded` and
+    ///   is importable by Node.js as `{ format: 'der', type: 'spki' }`.
     func generateKeyPair() throws -> (
         privateKey: SecureEnclave.P256.Signing.PrivateKey,
         publicKeyBase64: String
     ) {
         let privateKey = try SecureEnclave.P256.Signing.PrivateKey()
-        let publicKeyBase64 = privateKey.publicKey.x963Representation.base64EncodedString()
+        let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
         return (privateKey, publicKeyBase64)
     }
 

@@ -209,7 +209,7 @@ final class VerificationManager {
     ) -> VouchflowResult {
         VouchflowResult(
             verified: response.verified,
-            confidence: Confidence(rawValue: response.confidence) ?? .low,
+            confidence: response.confidence.flatMap { Confidence(rawValue: $0) } ?? .low,
             deviceToken: deviceToken,
             deviceAgeDays: response.deviceAgeDays,
             networkVerifications: response.networkVerifications,

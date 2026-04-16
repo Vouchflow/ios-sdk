@@ -67,7 +67,6 @@ final class VerificationManager {
 
         // Step 3: Initiate session
         let verifyRequest = VerifyRequest(
-            customerId: config.customerId,
             deviceToken: deviceToken,
             context: context.rawValue,
             minimumConfidence: minimumConfidence?.rawValue

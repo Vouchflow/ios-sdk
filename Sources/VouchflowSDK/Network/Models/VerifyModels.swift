@@ -3,7 +3,6 @@ import Foundation
 // MARK: - Initiate verification
 
 struct VerifyRequest: Encodable {
-    let customerId: String
     let deviceToken: String
     let context: String
     /// Optional. If the device cannot reach this level, the server returns `verification_impossible`.

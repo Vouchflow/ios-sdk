@@ -30,7 +30,6 @@ final class EnrollRequestEncodingTests: XCTestCase {
     func test_topLevelFields_present() throws {
         let req = EnrollRequest(
             idempotencyKey: "ik_abc",
-            customerId: "cust_123",
             platform: "ios",
             reason: "fresh_enrollment",
             attestation: nil,
@@ -40,7 +39,7 @@ final class EnrollRequestEncodingTests: XCTestCase {
         let dict = try encodeToDict(req)
 
         XCTAssertEqual(dict["idempotency_key"] as? String, "ik_abc")
-        XCTAssertEqual(dict["customer_id"] as? String, "cust_123")
+        XCTAssertNil(dict["customer_id"])  // no longer sent — server derives from API key
         XCTAssertEqual(dict["platform"] as? String, "ios")
         XCTAssertEqual(dict["reason"] as? String, "fresh_enrollment")
         XCTAssertEqual(dict["public_key"] as? String, "base64key==")
@@ -51,7 +50,6 @@ final class EnrollRequestEncodingTests: XCTestCase {
     func test_attestation_hasNoplatformField() throws {
         let req = EnrollRequest(
             idempotencyKey: "ik_abc",
-            customerId: "cust_123",
             platform: "ios",
             reason: "fresh_enrollment",
             attestation: EnrollRequest.AttestationPayload(token: "tok", keyId: "kid_1"),
@@ -70,7 +68,6 @@ final class EnrollRequestEncodingTests: XCTestCase {
     func test_reinstall_includesDeviceToken() throws {
         let req = EnrollRequest(
             idempotencyKey: "ik_xyz",
-            customerId: "cust_123",
             platform: "ios",
             reason: "reinstall",
             attestation: nil,
@@ -90,14 +87,13 @@ final class VerifyRequestEncodingTests: XCTestCase {
 
     func test_allFieldsPresent() throws {
         let req = VerifyRequest(
-            customerId: "cust_123",
             deviceToken: "dvt_abc",
             context: "login",
             minimumConfidence: "high"
         )
         let dict = try encodeToDict(req)
 
-        XCTAssertEqual(dict["customer_id"] as? String, "cust_123")
+        XCTAssertNil(dict["customer_id"])  // no longer sent — server derives from API key
         XCTAssertEqual(dict["device_token"] as? String, "dvt_abc")
         XCTAssertEqual(dict["context"] as? String, "login")
         XCTAssertEqual(dict["minimum_confidence"] as? String, "high")
@@ -105,7 +101,6 @@ final class VerifyRequestEncodingTests: XCTestCase {
 
     func test_minimumConfidence_omittedWhenNil() throws {
         let req = VerifyRequest(
-            customerId: "cust_123",
             deviceToken: "dvt_abc",
             context: "signup",
             minimumConfidence: nil

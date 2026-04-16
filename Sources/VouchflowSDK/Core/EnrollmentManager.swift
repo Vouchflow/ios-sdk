@@ -131,7 +131,6 @@ actor EnrollmentManager {
         }
         let enrollRequest = EnrollRequest(
             idempotencyKey: idempotencyKey,
-            customerId: config.customerId,
             platform: "ios",
             reason: reason,
             attestation: attestationPayload,
@@ -203,7 +202,6 @@ actor EnrollmentManager {
         }
         let enrollRequest = EnrollRequest(
             idempotencyKey: idempotencyKey,
-            customerId: config.customerId,
             platform: "ios",
             reason: reason,
             attestation: attestationPayload,

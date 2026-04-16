@@ -4,7 +4,6 @@ import Foundation
 
 struct EnrollRequest: Encodable {
     let idempotencyKey: String
-    let customerId: String
     let platform: String
     /// The enrollment reason. Maps to spec values: fresh_enrollment, reinstall, key_invalidated, corrupted.
     let reason: String

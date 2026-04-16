@@ -20,17 +20,12 @@ public enum VouchflowEnvironment {
 /// ```swift
 /// try Vouchflow.configure(VouchflowConfig(
 ///     apiKey: "vsk_live_...",
-///     customerId: "cust_abc123",
 ///     environment: .production
 /// ))
 /// ```
 public struct VouchflowConfig {
     /// Write-scoped API key. Safe to store in your build config; never use the read-scoped key here.
     public let apiKey: String
-
-    /// Your Vouchflow customer ID (e.g. `cust_abc123`). Included in enroll and verify requests
-    /// so the server can scope device tokens to your account.
-    public let customerId: String
 
     /// Defaults to `.production`. Use `.sandbox` during development — verifications do not
     /// count toward billing and do not enter the network graph.
@@ -55,14 +50,12 @@ public struct VouchflowConfig {
 
     public init(
         apiKey: String,
-        customerId: String,
         environment: VouchflowEnvironment = .production,
         keychainAccessGroup: String? = nil,
         leafCertificatePin: String = "iFvwVyJSxnQdyaUvUERIf+8qk7gRze3612JMwoO3zdU=",
         intermediateCertificatePin: String = "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
     ) {
         self.apiKey = apiKey
-        self.customerId = customerId
         self.environment = environment
         self.keychainAccessGroup = keychainAccessGroup
         self.leafCertificatePin = leafCertificatePin

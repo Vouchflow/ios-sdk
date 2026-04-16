@@ -30,6 +30,12 @@ final class VerificationManager {
     private let enrollmentManager: EnrollmentManager
     private let apiClient: VouchflowAPIClient
 
+    /// The session ID from the most recently initiated (but not yet completed) verification.
+    /// Set when a session is created, updated on retry, cleared on successful completion.
+    /// Retained through biometric failures so `Vouchflow.requestFallback` can use it without
+    /// the developer having to extract and pass it from the thrown error.
+    private(set) var pendingFallbackSessionId: String?
+
     init(
         config: VouchflowConfig,
         keychainManager: KeychainManager,
@@ -72,6 +78,7 @@ final class VerificationManager {
             minimumConfidence: minimumConfidence?.rawValue
         )
         var sessionResponse = try await apiClient.initiateVerification(verifyRequest)
+        pendingFallbackSessionId = sessionResponse.sessionId
 
         sessionCache.store(SessionCache.CachedSession(
             sessionId: sessionResponse.sessionId,
@@ -108,6 +115,7 @@ final class VerificationManager {
                     completeRequest
                 )
                 sessionCache.clear()
+                pendingFallbackSessionId = nil // session fully resolved — no fallback possible
                 return mapResult(response, deviceToken: deviceToken, context: context)
 
             } catch VouchflowError.__sessionExpiredInternal(let retryId, let retryChallenge) {
@@ -120,6 +128,7 @@ final class VerificationManager {
                     expiresAt: Date().addingTimeInterval(60),
                     sessionState: "INITIATED"
                 )
+                pendingFallbackSessionId = retryId // follow the retry chain
                 sessionCache.store(SessionCache.CachedSession(
                     sessionId: retryId,
                     challenge: retryChallenge,

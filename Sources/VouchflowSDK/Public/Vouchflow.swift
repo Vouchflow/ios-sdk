@@ -13,11 +13,10 @@ import Foundation
 /// do {
 ///     let result = try await Vouchflow.shared.verify(context: .signup)
 ///     // result.verified, result.confidence, result.deviceToken, result.signals
-/// } catch VouchflowError.biometricCancelled(let sessionId) {
+/// } catch VouchflowError.biometricCancelled {
 ///     // Show retry button
-/// } catch VouchflowError.biometricFailed(let sessionId) {
+/// } catch VouchflowError.biometricFailed {
 ///     let fallback = try await Vouchflow.shared.requestFallback(
-///         sessionId: sessionId,
 ///         email: userEmail,
 ///         reason: .biometricFailed
 ///     )
@@ -109,23 +108,27 @@ public final class Vouchflow {
 
     // MARK: - Fallback
 
-    /// Initiates email OTP fallback for a verification session.
+    /// Initiates email OTP fallback for the most recently initiated verification session.
     ///
-    /// Call this after catching `biometricFailed` or `biometricCancelled`. The SDK hashes
-    /// the email with SHA-256 internally — do not pre-hash it.
+    /// Call this after catching `biometricFailed` or `biometricCancelled`. The session ID is
+    /// managed internally — you do not need to pass it. The SDK hashes the email with SHA-256
+    /// internally — do not pre-hash it.
     ///
     /// - Parameters:
-    ///   - sessionId: The session ID from the thrown `VouchflowError` associated value.
     ///   - email: The user's plain-text email address. Never stored or logged by the SDK.
     ///   - reason: Why fallback is being requested.
     /// - Returns: A `FallbackResult` containing the `fallbackSessionId` and OTP expiry.
+    /// - Throws: `VouchflowError.noActiveSession` if `verify` has not been called yet or the
+    ///   session already completed successfully.
     public func requestFallback(
-        sessionId: String,
         email: String,
         reason: FallbackReason = .biometricFailed
     ) async throws -> FallbackResult {
-        guard let manager = fallbackManager else {
+        guard let manager = fallbackManager, let verificationManager else {
             throw VouchflowError.notConfigured
+        }
+        guard let sessionId = verificationManager.pendingFallbackSessionId else {
+            throw VouchflowError.noActiveSession
         }
         return try await manager.requestFallback(
             sessionId: sessionId,

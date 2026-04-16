@@ -56,6 +56,11 @@ public enum VouchflowError: Error {
     /// This error is thrown only when the retry session also expires.
     case sessionExpiredRepeatedly
 
+    /// `requestFallback` was called but there is no active session to fall back from.
+    /// Call `verify` first; only call `requestFallback` after catching `biometricCancelled`
+    /// or `biometricFailed`.
+    case noActiveSession
+
     // MARK: - Confidence
 
     /// The device cannot meet the `minimumConfidence` threshold specified in `verify(context:minimumConfidence:)`.

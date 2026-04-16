@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(timeout 15 ~/.fly/bin/flyctl logs --app vouchflow-server)",
+      "Bash(timeout 15 ~/.fly/bin/flyctl logs --app vouchflow-server --no-tail)",
+      "Bash(~/.fly/bin/flyctl status:*)",
+      "Bash(curl -s --max-time 15 https://vouchflow-server.fly.dev/health)",
+      "Bash(curl -sv --max-time 20 https://vouchflow-server.fly.dev/health)",
+      "Bash(~/.fly/bin/flyctl deploy:*)",
+      "Bash(~/.fly/bin/flyctl certs:*)",
+      "Bash(~/.fly/bin/flyctl postgres:*)",
+      "Bash(~/.fly/bin/flyctl secrets:*)",
+      "Bash(timeout 10 ~/.fly/bin/flyctl logs --app vouchflow-server --no-tail)",
+      "Bash(curl -s https://api.vouchflow.dev/health)",
+      "Bash(curl -s --max-time 10 -X POST https://api.vouchflow.dev/v1/enroll -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s --max-time 10 -X POST https://api.vouchflow.dev/v1/enroll -H 'Authorization: Bearer vf_read_test_6e642a6331ec07a73a640fca9fbe7cfe' -H 'Content-Type: application/json' -d '{}')"
+    ]
+  }
+}

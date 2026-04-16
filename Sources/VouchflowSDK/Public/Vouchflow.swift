@@ -152,4 +152,28 @@ public final class Vouchflow {
         }
         return try await manager.submitOTP(sessionId: sessionId, otp: otp)
     }
+
+    // MARK: - Reset
+
+    /// Clears all local enrollment data: Secure Enclave key, device token, and pending token.
+    ///
+    /// After calling this, the next `verify()` call will re-enroll the device. Use in test
+    /// harnesses or when implementing an explicit "unlink device" feature.
+    public func reset() {
+        verificationManager?.reset()
+    }
+
+    // MARK: - Test harness utilities
+
+    /// For developer test harnesses: initiates a verify session on the server without biometric
+    /// authentication. The session is stored as the pending fallback session, so a subsequent
+    /// `requestFallback` call will work without requiring a cancelled biometric prompt.
+    ///
+    /// Do not use this in production app code.
+    public func initiateSessionForFallbackTesting() async throws {
+        guard let manager = verificationManager else {
+            throw VouchflowError.notConfigured
+        }
+        _ = try await manager.initiateSession()
+    }
 }

@@ -54,6 +54,37 @@ final class VerificationManager {
         self.apiClient = apiClient
     }
 
+    // MARK: - Reset
+
+    /// Clears all local enrollment data. Called by `Vouchflow.reset()`.
+    func reset() {
+        try? keyManager.deleteKey(from: keychainManager)
+        try? keychainManager.delete(key: KeychainKey.deviceToken)
+        try? keychainManager.delete(key: KeychainKey.pendingToken)
+        pendingFallbackSessionId = nil
+        sessionCache.clear()
+        VouchflowLogger.debug("[VouchflowSDK] Reset complete — local enrollment data cleared.")
+    }
+
+    // MARK: - Session initiation (test harness utility)
+
+    /// Initiates a verify session on the server without biometric authentication.
+    /// Sets `pendingFallbackSessionId` so `requestFallback` will work after this call.
+    /// For use in developer test harnesses only — not for production app code.
+    func initiateSession() async throws -> String {
+        guard let deviceToken = try keychainManager.read(key: KeychainKey.deviceToken) else {
+            throw VouchflowError.enrollmentFailed(underlying: nil)
+        }
+        let verifyRequest = VerifyRequest(
+            deviceToken: deviceToken,
+            context: VerificationContext.login.rawValue,
+            minimumConfidence: nil
+        )
+        let sessionResponse = try await apiClient.initiateVerification(verifyRequest)
+        pendingFallbackSessionId = sessionResponse.sessionId
+        return sessionResponse.sessionId
+    }
+
     // MARK: - Verify
 
     func verify(context: VerificationContext, minimumConfidence: Confidence?) async throws -> VouchflowResult {

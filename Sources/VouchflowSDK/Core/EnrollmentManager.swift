@@ -141,6 +141,11 @@ actor EnrollmentManager {
         let response: EnrollResponse
         do {
             response = try await apiClient.enroll(enrollRequest)
+        } catch let vouchflowError as VouchflowError {
+            // Rethrow SDK errors (serverError, networkUnavailable, pinningFailure) directly
+            // so callers see the real cause rather than a generic enrollmentFailed wrapper.
+            VouchflowLogger.warn("[VouchflowSDK] Enrollment failed: \(type(of: vouchflowError))")
+            throw vouchflowError
         } catch {
             // Step 5b: Leave placeholder in Keychain — retried on next launch.
             VouchflowLogger.warn("[VouchflowSDK] Enrollment network call failed. Will retry on next launch. Error: \(error)")
@@ -196,7 +201,7 @@ actor EnrollmentManager {
             attestation = nil
         }
 
-        let publicKeyBase64 = privateKey.publicKey.x963Representation.base64EncodedString()
+        let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
         let attestationPayload = attestation.map {
             EnrollRequest.AttestationPayload(token: $0.token, keyId: $0.keyId)
         }
@@ -212,6 +217,9 @@ actor EnrollmentManager {
         let response: EnrollResponse
         do {
             response = try await apiClient.enroll(enrollRequest)
+        } catch let vouchflowError as VouchflowError {
+            VouchflowLogger.warn("[VouchflowSDK] Enrollment retry failed: \(type(of: vouchflowError))")
+            throw vouchflowError
         } catch {
             throw VouchflowError.enrollmentFailed(underlying: error)
         }

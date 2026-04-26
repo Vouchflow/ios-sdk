@@ -14,10 +14,9 @@ final class SessionManager {
 
     /// Suspends until the app next enters the foreground.
     ///
-    /// Uses `NotificationCenter.notifications(named:)` async sequence (iOS 15+).
-    /// Returns immediately if the app is already in the foreground when called
-    /// (the notification is only fired on transition, so this should only be called
-    /// after confirming the app is backgrounded).
+    /// Runs on the main actor because `NotificationCenter.default` and `UIApplication`
+    /// notifications are main-actor-isolated in Swift 5.10+.
+    @MainActor
     func waitForForeground() async {
         for await _ in NotificationCenter.default
             .notifications(named: UIApplication.willEnterForegroundNotification)

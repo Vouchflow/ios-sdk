@@ -77,4 +77,10 @@ public enum VouchflowError: Error {
     /// The server's TLS certificate did not match the configured pins.
     /// This may indicate a MITM attack or a pin rotation that was not deployed to the SDK.
     case pinningFailure
+
+    // MARK: - Internal (never surfaces to developers)
+
+    /// Carries retry session data from `VouchflowAPIClient` up to `VerificationManager`.
+    /// Pattern-matched internally and converted to `sessionExpiredRepeatedly` or a silent retry.
+    case __sessionExpiredInternal(retrySessionId: String, retryChallenge: String)
 }

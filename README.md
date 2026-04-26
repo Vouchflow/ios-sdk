@@ -20,7 +20,7 @@ Or add it to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/vouchflow/ios-sdk", from: "1.0.0"),
+    .package(url: "https://github.com/vouchflow/ios-sdk", from: "1.0.0"), // replace with latest tag
 ],
 targets: [
     .target(name: "YourApp", dependencies: ["VouchflowSDK"]),

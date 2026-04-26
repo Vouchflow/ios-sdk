@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(
             name: "VouchflowSDK",
+            type: .dynamic,
             targets: ["VouchflowSDK"]
         ),
     ],

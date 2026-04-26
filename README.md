@@ -1,5 +1,7 @@
 # Vouchflow iOS SDK
 
+[![CI](https://github.com/vouchflow/ios-sdk/actions/workflows/ios.yml/badge.svg)](https://github.com/vouchflow/ios-sdk/actions/workflows/ios.yml)
+
 Device-native identity verification for iOS apps. Vouchflow uses Secure Enclave cryptography and biometrics to verify that a user is operating from a known, trusted device — without passwords or third-party redirects.
 
 ## Requirements
@@ -290,3 +292,13 @@ If a pinning failure is detected at runtime, the SDK throws `VouchflowError.pinn
 - Emails are hashed before transmission and are never stored in plaintext by the server.
 - The SDK enforces TLS certificate pinning in production builds to prevent interception.
 - API keys are SHA-256 hashed before storage — raw keys are never persisted server-side.
+
+## Releases
+
+Releases are created automatically when a `v*` tag is pushed. The CI pipeline runs `swift test -c release` on macOS, then creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+SPM consumers pin to a version tag and get source distribution automatically — no additional steps required. The attached XCFramework zip is for integrators who prefer binary distribution.

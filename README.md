@@ -295,7 +295,7 @@ If a pinning failure is detected at runtime, the SDK throws `VouchflowError.pinn
 
 ## Releases
 
-Releases are created automatically when a `v*` tag is pushed. The CI pipeline runs `swift test -c release` on macOS, then creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
+Releases are created automatically when a `v*` tag is pushed. The CI pipeline runs `xcodebuild test` on an iOS Simulator (macOS runner), then creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
 
 ```bash
 git tag v1.0.1 && git push origin v1.0.1

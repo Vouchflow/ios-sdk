@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Detects enrollment state and performs enrollment atomically.

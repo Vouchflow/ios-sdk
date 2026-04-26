@@ -100,7 +100,7 @@ actor EnrollmentManager {
         let idempotencyKey = "ik_\(UUID().uuidString.lowercased())"
 
         // Step 1: Generate keypair in Secure Enclave
-        let (privateKey, publicKeyBase64): (_, String)
+        let (privateKey, publicKeyBase64): (SecureEnclave.P256.Signing.PrivateKey, String)
         do {
             (privateKey, publicKeyBase64) = try keyManager.generateKeyPair()
         } catch {

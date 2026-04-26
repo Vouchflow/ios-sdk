@@ -1,0 +1,70 @@
+name: iOS SDK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Build & test
+        run: swift test -c release
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Build XCFramework
+        run: |
+          set -euo pipefail
+          SCHEME="VouchflowSDK"
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          xcodebuild archive \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ios.xcarchive \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            -quiet
+
+          xcodebuild archive \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath build/ios-sim.xcarchive \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            -quiet
+
+          xcodebuild -create-xcframework \
+            -framework build/ios.xcarchive/Products/Library/Frameworks/VouchflowSDK.framework \
+            -framework build/ios-sim.xcarchive/Products/Library/Frameworks/VouchflowSDK.framework \
+            -output "build/VouchflowSDK.xcframework"
+
+          cd build
+          zip -r "VouchflowSDK-${VERSION}.zip" VouchflowSDK.xcframework
+          echo "ARTIFACT=build/VouchflowSDK-${VERSION}.zip" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT }}
+          generate_release_notes: true

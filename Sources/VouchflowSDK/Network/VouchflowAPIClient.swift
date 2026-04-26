@@ -151,18 +151,8 @@ final class VouchflowAPIClient {
 
 // MARK: - Internal session-expired carrier
 
-/// Internal-only error case used by `VouchflowAPIClient` to carry retry session data upward
-/// to `VerificationManager`, which translates it into the appropriate public error or retry.
-///
-/// This is NOT part of the public `VouchflowError` surface — developers never see it.
 extension VouchflowError {
     static func sessionExpired_internal(retrySessionId: String, retryChallenge: String) -> VouchflowError {
-        // Piggyback on serverError with a sentinel code so VerificationManager can pattern-match it.
-        // A cleaner alternative would be an internal error type, but that adds a second error enum
-        // for no benefit since this never crosses the public boundary.
         return .__sessionExpiredInternal(retrySessionId: retrySessionId, retryChallenge: retryChallenge)
     }
-
-    /// Internal-only. Do not expose in documentation or switch statements.
-    case __sessionExpiredInternal(retrySessionId: String, retryChallenge: String)
 }

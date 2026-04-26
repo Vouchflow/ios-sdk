@@ -295,10 +295,8 @@ If a pinning failure is detected at runtime, the SDK throws `VouchflowError.pinn
 
 ## Releases
 
-Releases are created automatically when a `v*` tag is pushed. The CI pipeline runs `xcodebuild test` on an iOS Simulator (macOS runner), then creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
+The patch version increments automatically on every push to `main`. CI reads the `VERSION` file, bumps the patch digit, commits the change back to `main` with `[skip ci]`, and pushes a `v*` tag. The tag push triggers a separate release job that runs tests, builds the XCFramework, and creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
 
-```bash
-git tag v1.0.1 && git push origin v1.0.1
-```
+To cut a minor or major release, update the `VERSION` file manually and push to `main`.
 
 SPM consumers pin to a version tag and get source distribution automatically — no additional steps required. The attached XCFramework zip is for integrators who prefer binary distribution.

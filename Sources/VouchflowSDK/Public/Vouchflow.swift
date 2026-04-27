@@ -41,6 +41,7 @@ public final class Vouchflow {
 
     private var verificationManager: VerificationManager?
     private var fallbackManager: FallbackManager?
+    private var keychainManager: KeychainManager?
 
     private init() {}
 
@@ -69,6 +70,7 @@ public final class Vouchflow {
                 attestationProvider: AttestationProvider(),
                 apiClient: apiClient
             )
+            shared.keychainManager = keychain
             shared.verificationManager = VerificationManager(
                 config: config,
                 keychainManager: keychain,
@@ -83,6 +85,17 @@ public final class Vouchflow {
                 apiClient: apiClient
             )
         }
+    }
+
+    // MARK: - Device token
+
+    /// Returns the locally-cached device token if the device is enrolled, `nil` otherwise.
+    ///
+    /// No network call or biometric prompt is made. Safe to call at cold start, from any thread,
+    /// before the user authenticates. Returns `nil` if the device has never enrolled, has been
+    /// reset, or if the Keychain is unavailable (e.g. device is locked at first boot).
+    public var cachedDeviceToken: String? {
+        return try? keychainManager?.read(key: KeychainKey.deviceToken)
     }
 
     // MARK: - Verification

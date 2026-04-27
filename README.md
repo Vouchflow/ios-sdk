@@ -55,6 +55,19 @@ struct MyApp: App {
 
 `apiKey` is your write-scoped API key from the Vouchflow dashboard. It is safe to store in your build config — do not use a read-scoped key here. No `customerId` is required; your customer account is identified server-side from the API key.
 
+## Checking enrollment status
+
+Before calling `verify()`, you can check whether the device is already enrolled without triggering a network call or biometric prompt:
+
+```swift
+if let token = Vouchflow.shared.cachedDeviceToken {
+    // Device is enrolled. `token` is the stable device identifier.
+    // You can pass it to your server now, or wait until after the next verify().
+}
+```
+
+`cachedDeviceToken` reads directly from Keychain and returns `nil` if the device has never enrolled, has been reset via `reset()`, or if the Keychain is unavailable (e.g. device has never been unlocked since boot). It is safe to call at cold start from any thread before the user authenticates.
+
 ## Verification
 
 ### Happy path
@@ -207,6 +220,18 @@ Pass the most specific reason that applies:
 | `.minimumConfidenceUnmet` | Device cannot meet the required confidence level |
 | `.keyInvalidated` | Secure Enclave key was invalidated (e.g. biometric change) |
 | `.developerInitiated` | Your app bypassed biometric for its own reasons |
+
+## API reference
+
+| Method / Property | Description |
+|---|---|
+| `configure(_:)` | One-time setup. Call before any other SDK method. |
+| `cachedDeviceToken` | Reads enrolled device token from Keychain. No network. Returns `nil` if not enrolled. |
+| `verify(context:minimumConfidence:)` | Full verification: enrollment, biometric, challenge signing. |
+| `requestFallback(email:reason:)` | Initiates email OTP fallback after a biometric error. |
+| `submitFallbackOTP(sessionId:otp:)` | Submits the OTP to complete fallback verification. |
+| `reset()` | Clears all local enrollment data. Next `verify()` re-enrolls. |
+| `initiateSessionForFallbackTesting()` | Test harness only. Do not use in production. |
 
 ## Result reference
 

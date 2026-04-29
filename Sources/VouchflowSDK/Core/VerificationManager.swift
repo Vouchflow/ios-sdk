@@ -66,6 +66,14 @@ final class VerificationManager {
         VouchflowLogger.debug("[VouchflowSDK] Reset complete — local enrollment data cleared.")
     }
 
+    // MARK: - Test harness utilities
+
+    /// Triggers enrollment if not already enrolled. For developer test harnesses only.
+    /// On return, `cachedDeviceToken` will be non-nil if enrollment succeeded.
+    func ensureEnrolledForTesting() async throws {
+        try await enrollmentManager.ensureEnrolled()
+    }
+
     // MARK: - Session initiation (test harness utility)
 
     /// Initiates a verify session on the server without biometric authentication.

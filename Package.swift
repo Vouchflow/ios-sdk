@@ -23,5 +23,10 @@ let package = Package(
             dependencies: ["VouchflowSDK"],
             path: "Tests/VouchflowSDKTests"
         ),
+        .testTarget(
+            name: "VouchflowSDKIntegrationTests",
+            dependencies: ["VouchflowSDK"],
+            path: "Tests/VouchflowSDKIntegrationTests"
+        ),
     ]
 )

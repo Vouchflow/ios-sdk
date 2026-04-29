@@ -15,7 +15,10 @@ jobs:
       - name: Select Xcode 15
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      - name: Build & test
+      - name: Build & test (unit + integration)
+        # Runs VouchflowSDKTests and VouchflowSDKIntegrationTests.
+        # On a fresh Simulator (no Face ID, no passcode) the integration tests that need
+        # biometric or passcode skip via XCTSkip; the enrollment and no-auth tests run fully.
         run: |
           xcodebuild test \
             -scheme VouchflowSDK \

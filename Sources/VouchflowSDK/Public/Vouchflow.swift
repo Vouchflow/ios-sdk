@@ -178,6 +178,17 @@ public final class Vouchflow {
 
     // MARK: - Test harness utilities
 
+    /// For developer test harnesses: ensures the device is enrolled. Triggers enrollment if needed.
+    /// On return, `cachedDeviceToken` will be non-nil if enrollment succeeded.
+    ///
+    /// Do not use in production app code.
+    public func ensureEnrolledForTesting() async throws {
+        guard let manager = verificationManager else {
+            throw VouchflowError.notConfigured
+        }
+        try await manager.ensureEnrolledForTesting()
+    }
+
     /// For developer test harnesses: initiates a verify session on the server without biometric
     /// authentication. The session is stored as the pending fallback session, so a subsequent
     /// `requestFallback` call will work without requiring a cancelled biometric prompt.

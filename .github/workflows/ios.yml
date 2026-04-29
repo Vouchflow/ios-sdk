@@ -22,8 +22,7 @@ jobs:
         run: |
           xcodebuild test \
             -scheme VouchflowSDK \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
-            -quiet
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest'
 
   release:
     needs: test

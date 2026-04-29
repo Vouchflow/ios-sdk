@@ -5,44 +5,45 @@ import XCTest
 /// Integration tests verifying enroll + verify behavior for each device passkey configuration
 /// against the sandbox environment.
 ///
-/// ## Simulator (CI)
+/// ## Simulator (CI — two-pass run in ios.yml)
 ///
-/// All four tests run fully automated on a fresh iOS Simulator (no pre-configuration needed):
+/// **Pass 1 (no biometric):**
+/// - Enrollment tests and no-auth tests run fully.
+/// - Biometric test skips via `canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)`.
+/// - Passcode test skips via `#if targetEnvironment(simulator)` guard.
 ///
-/// - **Biometric** and **passcode** tests enroll Face ID via `XCUIDevice.shared.biometricEnrollment`,
-///   launch `verify()` concurrently, then inject a biometric match via
-///   `XCUIDevice.shared.performBiometricMatch()`. The SDK uses `.deviceOwnerAuthentication`
-///   internally, so Face ID simulation exercises the same SE signing path as a passcode would.
+/// **Pass 2 (Face ID enrolled via `xcrun simctl io booted biometricEnroll`):**
+/// - Biometric test runs; CI runs a background `xcrun simctl io biometricMatch` watcher
+///   to accept the LAContext prompt while `verify()` is suspended.
+/// - No-auth tests are excluded via `-skip-testing` in the CI script (they would fail
+///   with biometric active).
+/// - Passcode test still skips on Simulator.
 ///
-/// - **No-auth** tests run directly. setUp resets biometricEnrollment to `.none` before each
-///   test, and the CI Simulator has no passcode, so `verify()` hits `LAError.passcodeNotSet`
-///   and throws `VouchflowError.biometricUnavailable` as expected.
+/// **Note on iOS 18+ Simulator:** `canEvaluatePolicy(.deviceOwnerAuthentication)` returns
+/// `true` on iOS 18+ Simulator even with no auth configured. The no-auth tests therefore
+/// skip the `.deviceOwnerAuthentication` guard on Simulator and run unconditionally; the
+/// CI script excludes them from the biometric pass.
+/// `canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` behaves correctly on all
+/// versions (returns false when no biometric is enrolled) and is used as the biometric guard.
 ///
 /// ## Physical device / manual run
 ///
-/// **Biometric (Face ID) enrolled:** Enable Face ID in Settings. While the test waits after
-///   calling verify(), trigger Simulator > Features > Face ID > Matching Face.
+/// **Biometric (Face ID) enrolled:** Enable Face ID in Settings. While the test waits,
+///   trigger Simulator > Features > Face ID > Matching Face (or equivalent on device).
 ///
 /// **Passcode only (no biometric):** Disable Face ID. Set a passcode in Settings > Face ID &
-///   Passcode. While the test waits, enter the passcode in the Simulator prompt.
+///   Passcode. While the test waits, enter the passcode in the prompt.
 ///
 /// **No auth:** Fresh Simulator with no lock screen configured.
 final class PasskeyTypeIntegrationTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        #if targetEnvironment(simulator)
-        // Guarantee clean biometric state before every test so no-auth tests see no enrollment.
-        XCUIDevice.shared.biometricEnrollment = .none
-        #endif
         try StagingTestConfig.configure()
         StagingTestConfig.reset()
     }
 
     override func tearDown() async throws {
-        #if targetEnvironment(simulator)
-        XCUIDevice.shared.biometricEnrollment = .none
-        #endif
         StagingTestConfig.reset()
         try await super.tearDown()
     }
@@ -51,21 +52,22 @@ final class PasskeyTypeIntegrationTests: XCTestCase {
 
     /// Face ID (or Touch ID) is enrolled. `verify()` succeeds via biometric authentication.
     ///
-    /// **Simulator:** Face ID enrolled and matched automatically via `XCUIDevice`.
-    /// **Physical device:** Biometric must be enrolled; trigger Matching Face while test waits.
+    /// **Simulator CI:** biometric is pre-enrolled via `xcrun simctl io booted biometricEnroll`.
+    ///   A background `xcrun simctl io booted biometricMatch` watcher accepts the LAContext prompt.
+    /// **Physical device:** Enable Face ID/Touch ID in device Settings before running.
     func test_biometricEnrolled_enrollAndVerifySucceeds() async throws {
-        #if targetEnvironment(simulator)
-        try await verifyWithSimulatedBiometric()
-        #else
         let ctx = LAContext()
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            throw XCTSkip("No biometric enrolled — enable Face ID/Touch ID in device Settings")
+            throw XCTSkip(
+                "No biometric enrolled — on Simulator, pre-enroll via " +
+                "`xcrun simctl io booted biometricEnroll`"
+            )
         }
+
         let result = try await Vouchflow.shared.verify(context: .login)
         XCTAssertTrue(result.verified, "verified must be true")
         XCTAssertNotNil(Vouchflow.shared.cachedDeviceToken, "device token must be set")
-        #endif
     }
 
     // ── Passcode enrolled (no biometric) ─────────────────────────────────────
@@ -73,15 +75,17 @@ final class PasskeyTypeIntegrationTests: XCTestCase {
     /// Device has a passcode but no biometric. The SDK uses `.deviceOwnerAuthentication`
     /// so iOS presents the passcode UI automatically when biometrics are unavailable.
     ///
-    /// **Simulator:** The SDK policy `.deviceOwnerAuthentication` accepts biometric or passcode.
-    ///   Face ID simulation satisfies it and exercises the same SE signing path as a passcode.
+    /// **Simulator:** Always skips. Passcode-only authentication cannot be reliably
+    ///   reproduced on Simulator; the biometric test exercises the same SE signing path
+    ///   via `.deviceOwnerAuthentication`.
     /// **Physical device:** Biometric must NOT be enrolled; set a passcode in Settings.
     ///   While the test waits, enter the passcode in the prompt.
     func test_passcodeEnrolled_enrollAndVerifySucceeds() async throws {
         #if targetEnvironment(simulator)
-        // The SDK uses .deviceOwnerAuthentication (biometric OR passcode). Satisfying it via
-        // biometric simulation on Simulator exercises the same Keystore signing path.
-        try await verifyWithSimulatedBiometric()
+        throw XCTSkip(
+            "Passcode-only scenario not reliably reproducible on Simulator — " +
+            "covered by the biometric test (same SE signing path via .deviceOwnerAuthentication)"
+        )
         #else
         let ctx = LAContext()
         var bioError: NSError?
@@ -104,12 +108,11 @@ final class PasskeyTypeIntegrationTests: XCTestCase {
     ///
     /// Expected: enrollment succeeds (SE key generation has no biometric gate on iOS),
     /// then verify() throws `VouchflowError.biometricUnavailable` at the LAContext step.
+    ///
+    /// **CI:** Runs in pass 1 (before biometric is enrolled). Excluded from pass 2 via
+    ///   `-skip-testing` (would fail because verify() succeeds with biometric active).
     func test_noAuth_verifyThrowsBiometricUnavailable_enrollmentStillSucceeds() async throws {
-        #if targetEnvironment(simulator)
-        // setUp sets biometricEnrollment = .none. CI Simulator has no passcode.
-        // iOS 18 Simulator may report canEvaluatePolicy as true despite no real credential,
-        // so we skip the policy guard on Simulator and drive the test directly.
-        #else
+        #if !targetEnvironment(simulator)
         let ctx = LAContext()
         var error: NSError?
         guard !ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
@@ -138,10 +141,11 @@ final class PasskeyTypeIntegrationTests: XCTestCase {
 
     /// Enrollment via `ensureEnrolledForTesting()` works on a device with no lock screen.
     /// This confirms enrollment and biometric are independent steps in the SDK.
+    ///
+    /// **CI:** Runs in pass 1 (before biometric is enrolled). Excluded from pass 2 via
+    ///   `-skip-testing`.
     func test_noAuth_enrollmentSucceeds_verifyThrows() async throws {
-        #if targetEnvironment(simulator)
-        // No biometric (setUp resets to .none) and no passcode on CI Simulator.
-        #else
+        #if !targetEnvironment(simulator)
         let ctx = LAContext()
         var error: NSError?
         guard !ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
@@ -160,43 +164,5 @@ final class PasskeyTypeIntegrationTests: XCTestCase {
         } catch {
             XCTFail("Expected biometricUnavailable, got: \(error)")
         }
-    }
-
-    // ── Simulator helper ─────────────────────────────────────────────────────
-
-    /// Enrolls Face ID via `XCUIDevice`, runs `verify()` concurrently, then simulates a
-    /// biometric match. Used by both the biometric and passcode tests on Simulator.
-    ///
-    /// The SDK uses `.deviceOwnerAuthentication` internally, so Face ID simulation satisfies
-    /// the same policy check that passcode entry would, and exercises the same SE signing path.
-    private func verifyWithSimulatedBiometric() async throws {
-        XCUIDevice.shared.biometricEnrollment = .enrolled
-
-        var capturedResult: VouchflowResult?
-        var capturedError: Error?
-        let done = XCTestExpectation(description: "verify() completes")
-
-        // verify() suspends at the LAContext biometric prompt. Launch concurrently so we can
-        // inject the match after the two network calls that precede it
-        // (POST /v1/enroll + POST /v1/verify, ~1–2s on sandbox).
-        Task {
-            do { capturedResult = try await Vouchflow.shared.verify(context: .login) }
-            catch { capturedError = error }
-            done.fulfill()
-        }
-
-        // Poll: call performBiometricMatch every 0.75s for up to 6s. If the prompt appears
-        // before our first attempt, subsequent calls are no-ops; if it appears late, a later
-        // attempt triggers it. This is more robust than a single fixed-duration sleep.
-        for _ in 0..<8 {
-            try await Task.sleep(nanoseconds: 750_000_000)
-            XCUIDevice.shared.performBiometricMatch()
-        }
-
-        await fulfillment(of: [done], timeout: 30)
-
-        XCTAssertNil(capturedError, "verify() threw unexpectedly: \(String(describing: capturedError))")
-        XCTAssertTrue(capturedResult?.verified == true, "verified must be true")
-        XCTAssertNotNil(Vouchflow.shared.cachedDeviceToken, "device token must be set after enroll + verify")
     }
 }

@@ -191,15 +191,13 @@ final class VerificationManager {
 
         // Biometric loop: retries silently after LAError.appCancel (app backgrounded)
         while true {
+            try Task.checkCancellation()
             let laContext = LAContext()
-            // Pre-check before evaluatePolicy. On a device with no biometric and
-            // no passcode, evaluatePolicy on iOS 17 Simulator hangs forever
-            // instead of returning .passcodeNotSet, so without this guard the
-            // catch block below is never reached. canEvaluatePolicy returns
-            // false in that case and surfaces biometricUnavailable immediately.
-            // (iOS 18+ Simulator returns true even when nothing is enrolled,
-            // so this isn't a substitute for proper hardware testing — but
-            // it does fix the iOS 17 Simulator hang.)
+            // Pre-check before evaluatePolicy. canEvaluatePolicy returns false on
+            // some devices when neither biometric nor passcode are configured,
+            // surfacing biometricUnavailable without a hang. (iOS 17/18 Simulator
+            // returns true even when nothing is enrolled, so the cancellation
+            // hook on evaluateBiometric is what actually unsticks that case.)
             var canEvalErr: NSError?
             if !laContext.canEvaluatePolicy(.deviceOwnerAuthentication, error: &canEvalErr) {
                 throw VouchflowError.biometricUnavailable
@@ -210,7 +208,10 @@ final class VerificationManager {
             } catch let error as LAError {
                 switch error.code {
                 case .appCancel, .systemCancel:
-                    // App was sent to background mid-prompt. Wait for foreground and retry.
+                    // Could be real app backgrounding OR our own LAContext.invalidate()
+                    // triggered by Task cancellation. If the task was cancelled,
+                    // bail out instead of retrying.
+                    try Task.checkCancellation()
                     VouchflowLogger.debug("[VouchflowSDK] Biometric interrupted by app backgrounding. Waiting for foreground.")
                     await SessionManager.shared.waitForForeground()
                     // Continue the while loop — re-present biometric. If the session expired
@@ -246,13 +247,15 @@ final class VerificationManager {
     /// or the device passcode — iOS presents passcode automatically if biometrics are unavailable
     /// or fail. This avoids hard-blocking users who have a passcode but no biometric enrolled.
     ///
-    /// On iOS Simulator, `evaluatePolicy` can hang indefinitely when no biometric and no
-    /// passcode are configured (canEvaluatePolicy returns true but the callback never
-    /// fires). A 30-second race throws `biometricUnavailable` instead of hanging — long
-    /// enough that biometric prompts in real Simulator usage (e.g. via `simctl io
-    /// biometricMatch`) still complete normally. Real-device builds have no timeout.
+    /// `withTaskCancellationHandler` invalidates the LAContext when the surrounding task
+    /// is cancelled. This forces `evaluatePolicy`'s callback to fire with an LAError
+    /// (instead of hanging forever, as happens on iOS 17/18 Simulator when no biometric
+    /// and no passcode are configured) and lets `Task.checkCancellation()` unwind the
+    /// stack cleanly. Real-device builds get the same plumbing — invalidate is a no-op
+    /// if evaluatePolicy already returned, so there's no behavior change in the
+    /// common path.
     private func evaluateBiometric(context: LAContext) async throws {
-        let evaluate: @Sendable () async throws -> Void = {
+        try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 context.evaluatePolicy(
                     .deviceOwnerAuthentication,
@@ -261,25 +264,13 @@ final class VerificationManager {
                     if success {
                         continuation.resume()
                     } else {
-                        continuation.resume(throwing: error!)
+                        continuation.resume(throwing: error ?? CancellationError())
                     }
                 }
             }
+        } onCancel: {
+            context.invalidate()
         }
-        #if targetEnvironment(simulator)
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await evaluate() }
-            group.addTask {
-                try await Task.sleep(nanoseconds: 30_000_000_000)
-                context.invalidate()
-                throw VouchflowError.biometricUnavailable
-            }
-            try await group.next()
-            group.cancelAll()
-        }
-        #else
-        try await evaluate()
-        #endif
     }
 
     // MARK: - Result mapping

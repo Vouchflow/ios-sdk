@@ -121,14 +121,24 @@ final class EnrollmentIntegrationTests: XCTestCase {
     /// Deletes the Secure Enclave key handle from Keychain, leaving the device token intact.
     /// Mirrors what `SecureEnclaveKeyManager.deleteKey(from:)` does internally.
     private func deleteSecureEnclaveKey() throws {
+        // Also clear the UserDefaults fallback KeychainManager engages on
+        // Simulator when SecItem* returns errSecMissingEntitlement. Without
+        // this, the SDK keeps reading the old SE key from UserDefaults and
+        // REINSTALL state never triggers.
+        UserDefaults.standard.removeObject(forKey: "vsk_fb_vs_se_key_data")
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "dev.vouchflow.sdk",
             kSecAttrAccount as String: "vs_se_key_data"   // KeychainKey.seKeyData
         ]
         let status = SecItemDelete(query as CFDictionary)
-        // errSecItemNotFound is acceptable — means the key was already gone
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        // errSecItemNotFound: key was already gone.
+        // errSecMissingEntitlement: SPM testTarget on Simulator can't access
+        //   Keychain — UserDefaults fallback above already cleared the entry.
+        guard status == errSecSuccess
+                || status == errSecItemNotFound
+                || status == errSecMissingEntitlement else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
     }

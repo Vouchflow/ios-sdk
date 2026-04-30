@@ -29,7 +29,24 @@ final class VouchflowAPIClient {
 
         self.decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
+        // Server may return ISO8601 with or without fractional seconds. The
+        // built-in .iso8601 strategy (ISO8601DateFormatter with default
+        // options) only accepts the "no fractional seconds" form, so a
+        // response like 2026-04-30T03:03:07.625Z fails to decode. Try the
+        // fractional-seconds variant first, then fall back.
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let str = try decoder.singleValueContainer().decode(String.self)
+            let withFractional = ISO8601DateFormatter()
+            withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = withFractional.date(from: str) { return date }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            if let date = plain.date(from: str) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: try decoder.singleValueContainer(),
+                debugDescription: "Expected date string to be ISO8601-formatted."
+            )
+        }
     }
 
     // MARK: - Enrollment

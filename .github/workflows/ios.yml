@@ -38,7 +38,8 @@ jobs:
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            CODE_SIGN_IDENTITY="-"
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_ENTITLEMENTS="Tests/VouchflowSDKIntegrationTests/TestEntitlements.plist"
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
@@ -50,7 +51,8 @@ jobs:
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds" \
-            CODE_SIGN_IDENTITY="-"
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_ENTITLEMENTS="Tests/VouchflowSDKIntegrationTests/TestEntitlements.plist"
 
           kill $WATCHER_PID 2>/dev/null || true
 

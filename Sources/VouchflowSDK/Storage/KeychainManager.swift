@@ -21,6 +21,15 @@ final class KeychainManager {
     private let service = "dev.vouchflow.sdk"
     private let accessGroup: String?
 
+    /// CI-only fallback: SPM .testTarget bundles loaded into xctest on Simulator
+    /// can't be granted Keychain entitlements, so all SecItem* calls return -34018.
+    /// When `VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1` is set in the process environment
+    /// (only ever by our own xcodebuild test invocation), persistence is routed
+    /// through UserDefaults instead. SDK consumers and production builds never
+    /// set this env var, so they always use the real Keychain.
+    private let useFallback: Bool = ProcessInfo.processInfo.environment["VOUCHFLOW_TEST_KEYCHAIN_FALLBACK"] == "1"
+    private let fallbackPrefix = "vsk_fb_"
+
     init(accessGroup: String? = nil) {
         self.accessGroup = accessGroup
     }
@@ -28,6 +37,10 @@ final class KeychainManager {
     // MARK: - Read
 
     func read(key: String) throws -> String? {
+        if useFallback {
+            return UserDefaults.standard.string(forKey: fallbackPrefix + key)
+        }
+
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -53,6 +66,11 @@ final class KeychainManager {
     // MARK: - Write
 
     func write(key: String, value: String) throws {
+        if useFallback {
+            UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
+            return
+        }
+
         let data = Data(value.utf8)
         var query = baseQuery(for: key)
 
@@ -80,6 +98,11 @@ final class KeychainManager {
     // MARK: - Delete
 
     func delete(key: String) throws {
+        if useFallback {
+            UserDefaults.standard.removeObject(forKey: fallbackPrefix + key)
+            return
+        }
+
         let query = baseQuery(for: key)
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {

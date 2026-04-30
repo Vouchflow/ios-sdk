@@ -35,11 +35,15 @@ jobs:
           DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone 15" | head -1 | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')
           echo "Simulator device ID: $DEVICE_ID"
 
+          # SPM .testTarget on Simulator can't get Keychain entitlements (xctest
+          # host binary swallows them), so KeychainManager honors
+          # TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1 to route persistence through
+          # UserDefaults during CI. Real-device coverage of the Keychain path
+          # is verified manually before release.
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_ENTITLEMENTS="Tests/VouchflowSDKIntegrationTests/TestEntitlements.plist"
+            TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
@@ -51,10 +55,10 @@ jobs:
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds" \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_ENTITLEMENTS="Tests/VouchflowSDKIntegrationTests/TestEntitlements.plist"
+            TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1
 
           kill $WATCHER_PID 2>/dev/null || true
+          wait 2>/dev/null || true
 
   release:
     needs: test

@@ -245,19 +245,41 @@ final class VerificationManager {
     /// Uses `.deviceOwnerAuthentication` so the user can authenticate with Face ID, Touch ID,
     /// or the device passcode — iOS presents passcode automatically if biometrics are unavailable
     /// or fail. This avoids hard-blocking users who have a passcode but no biometric enrolled.
+    ///
+    /// On iOS Simulator, `evaluatePolicy` can hang indefinitely when no biometric and no
+    /// passcode are configured (canEvaluatePolicy returns true but the callback never
+    /// fires). A 30-second race throws `biometricUnavailable` instead of hanging — long
+    /// enough that biometric prompts in real Simulator usage (e.g. via `simctl io
+    /// biometricMatch`) still complete normally. Real-device builds have no timeout.
     private func evaluateBiometric(context: LAContext) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: "Verify your identity"
-            ) { success, error in
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: error!)
+        let evaluate: @Sendable () async throws -> Void = {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: "Verify your identity"
+                ) { success, error in
+                    if success {
+                        continuation.resume()
+                    } else {
+                        continuation.resume(throwing: error!)
+                    }
                 }
             }
         }
+        #if targetEnvironment(simulator)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await evaluate() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 30_000_000_000)
+                context.invalidate()
+                throw VouchflowError.biometricUnavailable
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+        #else
+        try await evaluate()
+        #endif
     }
 
     // MARK: - Result mapping

@@ -16,6 +16,7 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
       - name: Build & test (unit + integration)
+        timeout-minutes: 30
         # Two-pass test run against the same Simulator:
         #
         # Pass 1 — no biometric enrolled (fresh Simulator):
@@ -48,15 +49,21 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
 
-          (while true; do xcrun simctl io "$DEVICE_ID" biometricMatch 2>/dev/null; sleep 1; done) &
-          WATCHER_PID=$!
+          # Flag-file watcher: portable across macOS/Linux, no setsid needed,
+          # and the loop self-terminates when the flag is removed (no kill /
+          # wait dance, no orphan-sleep child process to hang the runner).
+          WATCHER_FLAG=$(mktemp /tmp/biom_watcher.XXXXXX)
+          (while [ -f "$WATCHER_FLAG" ]; do
+             xcrun simctl io "$DEVICE_ID" biometricMatch 2>/dev/null
+             sleep 1
+           done) &
 
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds"
 
-          kill $WATCHER_PID 2>/dev/null || true
+          rm -f "$WATCHER_FLAG"
           wait 2>/dev/null || true
 
   release:

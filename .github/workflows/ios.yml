@@ -42,9 +42,17 @@ jobs:
           # Simulator. The fallback branch is excluded from real-device builds
           # via #if targetEnvironment(simulator). Real-device coverage of the
           # Keychain path is verified manually on a connected Mac before release.
+          # -test-timeouts-enabled YES + -default-test-execution-time-allowance
+          # makes any individual test that hangs >120s fail with a timeout
+          # error instead of stalling the whole step. Necessary because the
+          # noAuth tests on iOS 17.5 Simulator can hang in LAContext when no
+          # biometric/passcode is configured.
           xcodebuild test \
             -scheme VouchflowSDK \
-            -destination "platform=iOS Simulator,id=$DEVICE_ID"
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 180
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
@@ -58,9 +66,17 @@ jobs:
              sleep 1
            done) &
 
+          # -test-timeouts-enabled YES + -default-test-execution-time-allowance
+          # makes any individual test that hangs >120s fail with a timeout
+          # error instead of stalling the whole step. Necessary because the
+          # noAuth tests on iOS 17.5 Simulator can hang in LAContext when no
+          # biometric/passcode is configured.
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 180 \
             -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds"
 
           rm -f "$WATCHER_FLAG"

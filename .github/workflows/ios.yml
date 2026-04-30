@@ -36,14 +36,14 @@ jobs:
           echo "Simulator device ID: $DEVICE_ID"
 
           # SPM .testTarget on Simulator can't get Keychain entitlements (xctest
-          # host binary swallows them), so KeychainManager honors
-          # TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1 to route persistence through
-          # UserDefaults during CI. Real-device coverage of the Keychain path
-          # is verified manually before release.
+          # host binary swallows them), so KeychainManager auto-falls back to
+          # UserDefaults the first time it sees errSecMissingEntitlement on
+          # Simulator. The fallback branch is excluded from real-device builds
+          # via #if targetEnvironment(simulator). Real-device coverage of the
+          # Keychain path is verified manually on a connected Mac before release.
           xcodebuild test \
             -scheme VouchflowSDK \
-            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1
+            -destination "platform=iOS Simulator,id=$DEVICE_ID"
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
@@ -54,8 +54,7 @@ jobs:
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
-            -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds" \
-            TEST_RUNNER_VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1
+            -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds"
 
           kill $WATCHER_PID 2>/dev/null || true
           wait 2>/dev/null || true

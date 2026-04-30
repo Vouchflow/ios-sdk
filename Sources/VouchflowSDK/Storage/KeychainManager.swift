@@ -20,15 +20,19 @@ enum KeychainKey {
 final class KeychainManager {
     private let service = "dev.vouchflow.sdk"
     private let accessGroup: String?
-
-    /// CI-only fallback: SPM .testTarget bundles loaded into xctest on Simulator
-    /// can't be granted Keychain entitlements, so all SecItem* calls return -34018.
-    /// When `VOUCHFLOW_TEST_KEYCHAIN_FALLBACK=1` is set in the process environment
-    /// (only ever by our own xcodebuild test invocation), persistence is routed
-    /// through UserDefaults instead. SDK consumers and production builds never
-    /// set this env var, so they always use the real Keychain.
-    private let useFallback: Bool = ProcessInfo.processInfo.environment["VOUCHFLOW_TEST_KEYCHAIN_FALLBACK"] == "1"
     private let fallbackPrefix = "vsk_fb_"
+
+    /// Self-healing fallback for SPM .testTarget on Simulator.
+    ///
+    /// SPM unit-test bundles loaded into the system `xctest` host on Simulator
+    /// can't carry Keychain entitlements, so all `SecItem*` calls return
+    /// `errSecMissingEntitlement` (-34018). When that happens, we transparently
+    /// switch to UserDefaults-backed persistence for the rest of this manager's
+    /// lifetime. Compile-time `#if targetEnvironment(simulator)` excludes this
+    /// path entirely from real-device builds — production never falls back.
+    #if targetEnvironment(simulator)
+    private var useFallback = false
+    #endif
 
     init(accessGroup: String? = nil) {
         self.accessGroup = accessGroup
@@ -37,9 +41,11 @@ final class KeychainManager {
     // MARK: - Read
 
     func read(key: String) throws -> String? {
+        #if targetEnvironment(simulator)
         if useFallback {
             return UserDefaults.standard.string(forKey: fallbackPrefix + key)
         }
+        #endif
 
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
@@ -59,6 +65,12 @@ final class KeychainManager {
         case errSecInteractionNotAllowed:
             throw KeychainError.accessDenied
         default:
+            #if targetEnvironment(simulator)
+            if status == errSecMissingEntitlement {
+                useFallback = true
+                return UserDefaults.standard.string(forKey: fallbackPrefix + key)
+            }
+            #endif
             throw KeychainError.operationFailed(status: status)
         }
     }
@@ -66,10 +78,12 @@ final class KeychainManager {
     // MARK: - Write
 
     func write(key: String, value: String) throws {
+        #if targetEnvironment(simulator)
         if useFallback {
             UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
             return
         }
+        #endif
 
         let data = Data(value.utf8)
         var query = baseQuery(for: key)
@@ -88,9 +102,23 @@ final class KeychainManager {
             query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let insertStatus = SecItemAdd(query as CFDictionary, nil)
             guard insertStatus == errSecSuccess else {
+                #if targetEnvironment(simulator)
+                if insertStatus == errSecMissingEntitlement {
+                    useFallback = true
+                    UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
+                    return
+                }
+                #endif
                 throw KeychainError.operationFailed(status: insertStatus)
             }
         default:
+            #if targetEnvironment(simulator)
+            if updateStatus == errSecMissingEntitlement {
+                useFallback = true
+                UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
+                return
+            }
+            #endif
             throw KeychainError.operationFailed(status: updateStatus)
         }
     }
@@ -98,14 +126,23 @@ final class KeychainManager {
     // MARK: - Delete
 
     func delete(key: String) throws {
+        #if targetEnvironment(simulator)
         if useFallback {
             UserDefaults.standard.removeObject(forKey: fallbackPrefix + key)
             return
         }
+        #endif
 
         let query = baseQuery(for: key)
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            #if targetEnvironment(simulator)
+            if status == errSecMissingEntitlement {
+                useFallback = true
+                UserDefaults.standard.removeObject(forKey: fallbackPrefix + key)
+                return
+            }
+            #endif
             throw KeychainError.operationFailed(status: status)
         }
     }

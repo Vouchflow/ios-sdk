@@ -61,14 +61,23 @@ jobs:
           set -e
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-          xcrun simctl io "$DEVICE_ID" biometricEnroll
+
+          # Toggle Face ID enrollment via the BiometricKit notification.
+          # `simctl io biometricEnroll` was removed in newer Xcode runner
+          # images, but the underlying mechanism (a darwin notification
+          # observed by BiometricKit) is still there. Posting it once toggles
+          # the enrolled state from "not enrolled" to "enrolled".
+          xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit.enrollmentChanged
 
           # Flag-file watcher: portable across macOS/Linux, no setsid needed,
           # and the loop self-terminates when the flag is removed (no kill /
           # wait dance, no orphan-sleep child process to hang the runner).
+          # `simctl io biometricMatch` is also gone — fingerDown/fingerUp
+          # darwin notifications drive the same code path.
           WATCHER_FLAG=$(mktemp /tmp/biom_watcher.XXXXXX)
           (while [ -f "$WATCHER_FLAG" ]; do
-             xcrun simctl io "$DEVICE_ID" biometricMatch 2>/dev/null
+             xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerDown 2>/dev/null
+             xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerUp 2>/dev/null
              sleep 1
            done) &
 

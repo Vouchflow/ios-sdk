@@ -4,9 +4,11 @@
 <dict>
     <key>get-task-allow</key>
     <true/>
+    <key>application-identifier</key>
+    <string>VOUCHFL001.dev.vouchflow.tests</string>
     <key>keychain-access-groups</key>
     <array>
-        <string>dev.vouchflow.tests</string>
+        <string>VOUCHFL001.dev.vouchflow.tests</string>
     </array>
 </dict>
 </plist>

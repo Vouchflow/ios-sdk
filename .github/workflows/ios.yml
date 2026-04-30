@@ -47,12 +47,18 @@ jobs:
           # error instead of stalling the whole step. Necessary because the
           # noAuth tests on iOS 17.5 Simulator can hang in LAContext when no
           # biometric/passcode is configured.
+          # Capture pass 1 exit code but always continue to pass 2 — the
+          # biometric test only runs in pass 2 after Face ID is enrolled,
+          # and we want it to surface even if a flaky pass 1 test failed.
+          set +e
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 180
+          PASS1_EXIT=$?
+          set -e
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
           xcrun simctl io "$DEVICE_ID" biometricEnroll
@@ -71,6 +77,7 @@ jobs:
           # error instead of stalling the whole step. Necessary because the
           # noAuth tests on iOS 17.5 Simulator can hang in LAContext when no
           # biometric/passcode is configured.
+          set +e
           xcodebuild test \
             -scheme VouchflowSDK \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
@@ -78,9 +85,17 @@ jobs:
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 180 \
             -only-testing "VouchflowSDKIntegrationTests/PasskeyTypeIntegrationTests/test_biometricEnrolled_enrollAndVerifySucceeds"
+          PASS2_EXIT=$?
+          set -e
 
           rm -f "$WATCHER_FLAG"
           wait 2>/dev/null || true
+
+          # Fail the step if either pass had a real failure.
+          if [ "${PASS1_EXIT:-0}" != "0" ] || [ "${PASS2_EXIT:-0}" != "0" ]; then
+            echo "::error::test failures (pass1=$PASS1_EXIT pass2=$PASS2_EXIT)"
+            exit 1
+          fi
 
   release:
     needs: test

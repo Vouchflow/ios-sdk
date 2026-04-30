@@ -192,6 +192,18 @@ final class VerificationManager {
         // Biometric loop: retries silently after LAError.appCancel (app backgrounded)
         while true {
             let laContext = LAContext()
+            // Pre-check before evaluatePolicy. On a device with no biometric and
+            // no passcode, evaluatePolicy on iOS 17 Simulator hangs forever
+            // instead of returning .passcodeNotSet, so without this guard the
+            // catch block below is never reached. canEvaluatePolicy returns
+            // false in that case and surfaces biometricUnavailable immediately.
+            // (iOS 18+ Simulator returns true even when nothing is enrolled,
+            // so this isn't a substitute for proper hardware testing — but
+            // it does fix the iOS 17 Simulator hang.)
+            var canEvalErr: NSError?
+            if !laContext.canEvaluatePolicy(.deviceOwnerAuthentication, error: &canEvalErr) {
+                throw VouchflowError.biometricUnavailable
+            }
             do {
                 try await evaluateBiometric(context: laContext)
                 break // success — proceed to signing

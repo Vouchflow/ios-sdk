@@ -259,7 +259,7 @@ Returned by `verify(context:minimumConfidence:)`.
 | `biometricUsed` | `Bool` | Face ID / Touch ID was used for this verification |
 | `crossAppHistory` | `Bool` | Device has verified across more than one Vouchflow-integrated app |
 | `anomalyFlags` | `[String]` | Anomaly flags from the network graph — empty for clean devices |
-| `attestationVerified` | `Bool` | App Attest was verified at enrollment time |
+| `attestationVerified` | `Bool` | App Attest chain was rooted in Apple's App Attest Root CA at enrollment time, with team ID and bundle ID matching the registered values |
 
 ### `FallbackVerificationResult`
 
@@ -303,7 +303,7 @@ If a pinning failure is detected at runtime, the SDK throws `VouchflowError.pinn
 
 ## How it works
 
-1. **Enrollment** — On first launch, the SDK generates a key pair in the Secure Enclave and registers the device with the Vouchflow API. App Attest is used to verify the device and app integrity where available. Enrollment is automatic and transparent to the user.
+1. **Enrollment** — On first launch, the SDK generates a key pair in the Secure Enclave and registers the device with the Vouchflow API, including an App Attest attestation object generated for the enrollment's idempotency key. The server walks the cert chain to Apple's App Attest Root CA and verifies the team ID and bundle ID match what your account has registered. Enrollment is automatic and transparent to the user; on Simulator (where App Attest isn't available) the device falls back to `confidence_ceiling = medium`.
 
 2. **Verification** — When `verify` is called, the SDK retrieves a challenge from the server, presents a Face ID / Touch ID prompt, signs the challenge with the Secure Enclave private key, and submits the signature. The server verifies the signature against the enrolled public key.
 

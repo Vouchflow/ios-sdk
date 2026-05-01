@@ -15,6 +15,20 @@ jobs:
       - name: Select Xcode 15
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
+      - name: Debug — find Xcode that has simctl io biometricEnroll
+        run: |
+          set +e
+          echo "Active developer dir: $(xcode-select -p)"
+          echo "xcrun simctl: $(xcrun --find simctl 2>&1)"
+          echo "---"
+          for app in /Applications/Xcode*.app; do
+            simctl="$app/Contents/Developer/usr/bin/simctl"
+            if [ -x "$simctl" ]; then
+              has=$("$simctl" help io 2>&1 | grep -c biometricEnroll)
+              echo "$app: biometricEnroll=$has"
+            fi
+          done
+
       - name: Build & test (unit + integration)
         timeout-minutes: 30
         # Two-pass test run against the same Simulator:
@@ -62,22 +76,34 @@ jobs:
 
           xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
 
-          # Toggle Face ID enrollment via the BiometricKit notification.
-          # `simctl io biometricEnroll` was removed in newer Xcode runner
-          # images, but the underlying mechanism (a darwin notification
-          # observed by BiometricKit) is still there. Posting it once toggles
-          # the enrolled state from "not enrolled" to "enrolled".
-          xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit.enrollmentChanged
+          # The runner's `xcrun simctl` resolves to a newer toolchain whose
+          # `simctl io` no longer has the biometric* operations, so call
+          # Xcode 15.4's bundled simctl directly. If 15.4 has also been
+          # patched to drop biometric, fall back to the notifyutil path
+          # (which only flips a flag — won't actually pass canEvaluatePolicy
+          # for .deviceOwnerAuthenticationWithBiometrics on every iOS
+          # version, but it's the best we can do without GUI automation).
+          SIMCTL_154="/Applications/Xcode_15.4.app/Contents/Developer/usr/bin/simctl"
+          if [ -x "$SIMCTL_154" ] && "$SIMCTL_154" help io 2>&1 | grep -q biometricEnroll; then
+            echo "Using Xcode 15.4 simctl (has biometricEnroll)"
+            "$SIMCTL_154" io "$DEVICE_ID" biometricEnroll
+            BIOMETRIC_CMD_154=true
+          else
+            echo "Xcode 15.4 simctl missing biometricEnroll — falling back to notifyutil"
+            xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit.enrollmentChanged
+            BIOMETRIC_CMD_154=false
+          fi
 
-          # Flag-file watcher: portable across macOS/Linux, no setsid needed,
-          # and the loop self-terminates when the flag is removed (no kill /
-          # wait dance, no orphan-sleep child process to hang the runner).
-          # `simctl io biometricMatch` is also gone — fingerDown/fingerUp
-          # darwin notifications drive the same code path.
+          # Flag-file watcher: posts BiometricMatch every second so the
+          # LAContext prompt is auto-accepted when verify() suspends.
           WATCHER_FLAG=$(mktemp /tmp/biom_watcher.XXXXXX)
           (while [ -f "$WATCHER_FLAG" ]; do
-             xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerDown 2>/dev/null
-             xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerUp 2>/dev/null
+             if [ "$BIOMETRIC_CMD_154" = "true" ]; then
+               "$SIMCTL_154" io "$DEVICE_ID" biometricMatch 2>/dev/null
+             else
+               xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerDown 2>/dev/null
+               xcrun simctl spawn "$DEVICE_ID" notifyutil -p com.apple.BiometricKit_Sim.fingerUp 2>/dev/null
+             fi
              sleep 1
            done) &
 

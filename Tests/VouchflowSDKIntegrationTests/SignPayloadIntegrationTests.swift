@@ -1,3 +1,4 @@
+import LocalAuthentication
 import XCTest
 @testable import VouchflowSDK
 
@@ -35,6 +36,19 @@ final class SignPayloadIntegrationTests: XCTestCase {
     /// accepts the LAContext prompt that fires during the SE signature —
     /// same pattern as `PasskeyTypeIntegrationTests.biometricEnrolled_*`.
     func test_signPayload_returnsWellFormedBundle() async throws {
+        // Skip when no biometric is enrolled — the LAContext prompt would
+        // hang otherwise (the prompt UI doesn't auto-resolve on a fresh
+        // Simulator). CI pass 2 enrolls Face ID via simctl before this
+        // test runs; pass 1 lets it skip cleanly.
+        let ctx = LAContext()
+        var canEvalErr: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &canEvalErr) else {
+            throw XCTSkip(
+                "No biometric enrolled — on Simulator, pre-enroll via " +
+                "`xcrun simctl io booted biometricEnroll`"
+            )
+        }
+
         // Pre-enroll without biometric so the sign call's biometric prompt
         // is the only auth step.
         try await Vouchflow.shared.ensureEnrolledForTesting()

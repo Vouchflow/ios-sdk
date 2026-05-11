@@ -176,32 +176,42 @@ final class SignPayloadManager {
 
     // MARK: - Biometric (mirrors VerificationManager.evaluateBiometric)
 
+    /// Gates the SE signature behind a system biometric prompt. Uses
+    /// `withTaskCancellationHandler` to invalidate the LAContext if the
+    /// surrounding Task is cancelled — without this, `evaluatePolicy`'s
+    /// callback never fires on iOS 17/18 Simulator when no biometric is
+    /// enrolled, and any caller-side timeout hangs the test runner.
+    /// See `VerificationManager.evaluateBiometric` for the full reasoning.
     private func evaluateBiometric() async throws {
         let context = LAContext()
         var canEvalErr: NSError?
         if !context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &canEvalErr) {
             throw VouchflowError.biometricUnavailable
         }
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: "Authorize this signature"
-            ) { success, error in
-                if success {
-                    cont.resume()
-                } else if let err = error as? LAError {
-                    switch err.code {
-                    case .userCancel:
-                        cont.resume(throwing: VouchflowError.biometricCancelled(sessionId: ""))
-                    case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
-                        cont.resume(throwing: VouchflowError.biometricUnavailable)
-                    default:
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: "Authorize this signature"
+                ) { success, error in
+                    if success {
+                        cont.resume()
+                    } else if let err = error as? LAError {
+                        switch err.code {
+                        case .userCancel:
+                            cont.resume(throwing: VouchflowError.biometricCancelled(sessionId: ""))
+                        case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
+                            cont.resume(throwing: VouchflowError.biometricUnavailable)
+                        default:
+                            cont.resume(throwing: VouchflowError.biometricFailed(sessionId: ""))
+                        }
+                    } else {
                         cont.resume(throwing: VouchflowError.biometricFailed(sessionId: ""))
                     }
-                } else {
-                    cont.resume(throwing: VouchflowError.biometricFailed(sessionId: ""))
                 }
             }
+        } onCancel: {
+            context.invalidate()
         }
     }
 }

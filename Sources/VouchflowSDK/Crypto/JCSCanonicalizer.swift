@@ -38,15 +38,18 @@ enum JCSCanonicalizer {
 
     private static func serialize(_ value: Any) -> String {
         if value is NSNull { return "null" }
-        if let b = value as? Bool { return b ? "true" : "false" }
+        // NSNumber must be checked BEFORE `as? Bool`: NSNumber transparently
+        // bridges to Bool for 0/1, so a freshly-decoded integer 1 would
+        // otherwise serialize as `true`. Use CFBoolean's typeID to detect
+        // actual Bool NSNumbers — objCType ("c", "B") is unreliable because
+        // tagged-pointer NSNumber can use "c" for small Ints too.
         if let n = value as? NSNumber {
-            // NSNumber masks Bool vs Int — distinguish by ObjC type.
-            let objCType = String(cString: n.objCType)
-            if objCType == "c" || objCType == "B" {
+            if CFGetTypeID(n) == CFBooleanGetTypeID() {
                 return n.boolValue ? "true" : "false"
             }
             return serializeNumber(n.doubleValue)
         }
+        if let b = value as? Bool { return b ? "true" : "false" }
         if let s = value as? String { return serializeString(s) }
         if let arr = value as? [Any] { return serializeArray(arr) }
         if let dict = value as? [String: Any] { return serializeObject(dict) }

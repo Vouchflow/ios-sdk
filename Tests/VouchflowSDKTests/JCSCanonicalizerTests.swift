@@ -15,20 +15,23 @@ final class JCSCanonicalizerTests: XCTestCase {
     }
 
     func test_booleans() {
-        XCTAssertEqual(JCSCanonicalizer.canonicalize(true), "true")
-        XCTAssertEqual(JCSCanonicalizer.canonicalize(false), "false")
+        // Cast to Any to dispatch to the non-throwing Any-overload — without
+        // the cast, Swift prefers the generic `Encodable` overload (which
+        // throws) and the test calls would require `try`.
+        XCTAssertEqual(JCSCanonicalizer.canonicalize(true as Any), "true")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize(false as Any), "false")
     }
 
     func test_integers() {
-        XCTAssertEqual(JCSCanonicalizer.canonicalize(0), "0")
-        XCTAssertEqual(JCSCanonicalizer.canonicalize(123), "123")
-        XCTAssertEqual(JCSCanonicalizer.canonicalize(-7), "-7")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize(0 as Any), "0")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize(123 as Any), "123")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize(-7 as Any), "-7")
     }
 
     func test_strings() {
-        XCTAssertEqual(JCSCanonicalizer.canonicalize("hello"), "\"hello\"")
-        XCTAssertEqual(JCSCanonicalizer.canonicalize("a\"b"), "\"a\\\"b\"")
-        XCTAssertEqual(JCSCanonicalizer.canonicalize("a\nb"), "\"a\\nb\"")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize("hello" as Any), "\"hello\"")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize("a\"b" as Any), "\"a\\\"b\"")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize("a\nb" as Any), "\"a\\nb\"")
     }
 
     // MARK: Collections
@@ -39,7 +42,7 @@ final class JCSCanonicalizerTests: XCTestCase {
     }
 
     func test_arrayPreservesOrder() {
-        XCTAssertEqual(JCSCanonicalizer.canonicalize([3, 1, 2]), "[3,1,2]")
+        XCTAssertEqual(JCSCanonicalizer.canonicalize([3, 1, 2] as Any), "[3,1,2]")
     }
 
     func test_objectKeysAreSorted() {

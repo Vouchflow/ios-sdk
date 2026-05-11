@@ -41,6 +41,7 @@ public final class Vouchflow {
 
     private var verificationManager: VerificationManager?
     private var fallbackManager: FallbackManager?
+    private var signPayloadManager: SignPayloadManager?
     private var keychainManager: KeychainManager?
 
     private init() {}
@@ -82,6 +83,14 @@ public final class Vouchflow {
             )
             shared.fallbackManager = FallbackManager(
                 keychainManager: keychain,
+                apiClient: apiClient
+            )
+            shared.signPayloadManager = SignPayloadManager(
+                config: config,
+                keychainManager: keychain,
+                keyManager: keyManager,
+                attestationProvider: AttestationProvider(),
+                enrollmentManager: enrollmentManager,
                 apiClient: apiClient
             )
         }
@@ -164,6 +173,42 @@ public final class Vouchflow {
             throw VouchflowError.notConfigured
         }
         return try await manager.submitOTP(sessionId: sessionId, otp: otp)
+    }
+
+    // MARK: - signPayload
+
+    /// Cryptographically binds a Face ID / Touch ID confirmation to specific
+    /// payload content. Use for high-assurance authorization — mandate signing,
+    /// transaction approval, key release, identity disclosure consent — where
+    /// the proof must include *what* was authorized, not just that a user
+    /// confirmation occurred.
+    ///
+    /// The returned `SignedBundle.assertion` is a JWS signed by Vouchflow.
+    /// Your backend verifies it against
+    /// `https://api.vouchflow.dev/v1/.well-known/jwks.json` with any JWT
+    /// library — no platform cryptography on the server side.
+    ///
+    /// - Parameters:
+    ///   - payload: Any `Encodable`. Canonicalized via RFC 8785 JCS before signing.
+    ///   - context: A short audit string (`'mandate_signing'`, `'transfer'`, etc.).
+    ///   - minimumConfidence: Defaults to `.high`. With `.high`, the SDK attempts
+    ///     App Attest re-attestation; if unavailable the call may downgrade to
+    ///     `.medium` and throw `.minimumConfidenceUnmet`.
+    /// - Returns: A `SignedBundle` to ship to your backend.
+    /// - Throws: `VouchflowError`
+    public func signPayload<T: Encodable>(
+        _ payload: T,
+        context: String,
+        minimumConfidence: Confidence = .high
+    ) async throws -> SignedBundle {
+        guard let manager = signPayloadManager else {
+            throw VouchflowError.notConfigured
+        }
+        return try await manager.signPayload(
+            payload: payload,
+            context: context,
+            minimumConfidence: minimumConfidence
+        )
     }
 
     // MARK: - Reset

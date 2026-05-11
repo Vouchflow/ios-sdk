@@ -157,6 +157,12 @@ actor EnrollmentManager {
         do {
             try keychainManager.write(key: KeychainKey.deviceToken, value: response.deviceToken)
             try keychainManager.delete(key: KeychainKey.pendingToken)
+            // Persist the App Attest keyId so signPayload can produce fresh
+            // assertions for the high-confidence path. Stored separately from
+            // the SE key — different Apple service, different lifecycle.
+            if let keyId = attestation?.keyId {
+                try keychainManager.write(key: KeychainKey.appAttestKeyId, value: keyId)
+            }
         } catch let keychainError as KeychainError {
             throw keychainError.asVouchflowError
         }

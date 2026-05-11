@@ -82,6 +82,44 @@ final class AttestationProvider {
             }
         }
     }
+
+    // MARK: - Sign-time re-attestation
+
+    /// Produces a fresh App Attest assertion over the given `clientDataHash`,
+    /// using the App Attest key generated at enrollment.
+    ///
+    /// Called from `SignPayloadManager` on the high-confidence path. The
+    /// assertion proves the app bundle and device integrity are still in a
+    /// trustworthy state at sign time — narrowing the window between
+    /// enrollment-time attestation and sign-time use.
+    ///
+    /// - Parameters:
+    ///   - keyId: The App Attest key ID persisted at enrollment.
+    ///   - clientDataHash: SHA-256 hash of `canonical_payload || challenge`
+    ///     (the same bytes the SE key signed). Apple's API signs over
+    ///     `authenticatorData || clientDataHash`; the server later verifies
+    ///     that clientDataHash matches the same signingInputHash.
+    /// - Returns: Base64-encoded CBOR assertion ready to ship to
+    ///   `POST /v1/sign/:id/complete` as `app_attest_assertion`. `nil` when
+    ///   App Attest is unsupported on this device (Simulator, older iOS).
+    func generateAssertion(keyId: String, clientDataHash: Data) async throws -> String? {
+        let service = DCAppAttestService.shared
+        guard service.isSupported else {
+            return nil
+        }
+        let assertion: Data = try await withCheckedThrowingContinuation { cont in
+            service.generateAssertion(keyId, clientDataHash: clientDataHash) { result, error in
+                if let error {
+                    cont.resume(throwing: error)
+                } else if let result {
+                    cont.resume(returning: result)
+                } else {
+                    cont.resume(throwing: AttestationError.unexpectedNilResult)
+                }
+            }
+        }
+        return assertion.base64EncodedString()
+    }
 }
 
 // MARK: - Errors

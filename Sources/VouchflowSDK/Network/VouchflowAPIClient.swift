@@ -68,6 +68,19 @@ final class VouchflowAPIClient {
         try await perform(method: "POST", path: "/v1/verify/\(sessionId)/complete", body: request)
     }
 
+    // MARK: - Sign
+
+    func initiateSign(_ request: SignInitiateRequest) async throws -> SignInitiateResponse {
+        try await perform(method: "POST", path: "/v1/sign", body: request)
+    }
+
+    func completeSign(
+        sessionId: String,
+        _ request: SignCompleteRequest
+    ) async throws -> SignCompleteResponse {
+        try await perform(method: "POST", path: "/v1/sign/\(sessionId)/complete", body: request)
+    }
+
     // MARK: - Fallback
 
     func initiateFallback(

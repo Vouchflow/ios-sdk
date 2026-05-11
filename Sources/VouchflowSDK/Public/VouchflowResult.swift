@@ -109,3 +109,36 @@ public struct FallbackResult {
     /// When the OTP expires. 5-minute window from initiation.
     public let expiresAt: Date
 }
+
+// MARK: - signPayload
+
+/// The result of a successful `signPayload(...)` call.
+///
+/// The customer's backend verifies `assertion` against Vouchflow's published
+/// JWKs at `https://api.vouchflow.dev/v1/.well-known/jwks.json` — no
+/// platform cryptography required server-side.
+public struct SignedBundle {
+    /// Canonicalized JSON string (RFC 8785 JCS) that was actually signed.
+    /// Customer backends recompute SHA-256 of this string and compare to
+    /// `payload_sha256` in the JWS claims.
+    public let payload: String
+    /// The context string passed at call time, echoed back for audit.
+    public let context: String
+    /// Vouchflow-signed JWS (compact). The primary thing customers verify.
+    public let assertion: String
+    /// Stable per-device, per-customer identifier (`sdv_…`). Survives
+    /// re-enrollment of the same SE key.
+    public let signingDeviceId: String
+    /// Same opaque token as `verify()` — pass to your backend for
+    /// reputation queries.
+    public let deviceToken: String
+    /// Achieved confidence. May be lower than the device's enrollment
+    /// ceiling — see `minimumConfidence` and App Attest re-attestation.
+    public let confidence: Confidence
+    /// ISO 8601 timestamp set by Vouchflow's server when the assertion
+    /// was issued.
+    public let signedAt: Date
+    /// Always `.ios` for this SDK. Mirrored from the JWS `platform` claim.
+    public let platform: String
+}
+

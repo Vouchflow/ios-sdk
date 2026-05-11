@@ -9,6 +9,10 @@ enum KeychainKey {
     static let pendingToken = "vs_pending_token"
     /// Opaque `dataRepresentation` of the Secure Enclave private key, base64-encoded.
     static let seKeyData = "vs_se_key_data"
+    /// App Attest key identifier from `DCAppAttestService.generateKey()`.
+    /// Persisted at enrollment so `signPayload` can produce fresh
+    /// assertions for the `high` confidence path. ~32 char base64.
+    static let appAttestKeyId = "vs_app_attest_key_id"
 }
 
 /// Wraps Security framework Keychain operations.

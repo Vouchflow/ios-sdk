@@ -78,6 +78,17 @@ public enum VouchflowError: Error {
     /// This may indicate a MITM attack or a pin rotation that was not deployed to the SDK.
     case pinningFailure
 
+    // MARK: - signPayload
+
+    /// The payload passed to `signPayload(payload:context:)` cannot be
+    /// canonicalized as JSON (contains non-JSON types, NaN/Infinity, etc.).
+    case canonicalizationFailed(underlying: Error?)
+
+    /// Server rejected the signed payload — typically because the canonical
+    /// bytes the SDK sent at initiate don't match what the device signed.
+    /// Should not occur in normal use; indicates SDK or device key bug.
+    case payloadSignatureRejected
+
     // MARK: - Internal (never surfaces to developers)
 
     /// Carries retry session data from `VouchflowAPIClient` up to `VerificationManager`.

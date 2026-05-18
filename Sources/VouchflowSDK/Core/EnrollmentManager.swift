@@ -31,14 +31,14 @@ actor EnrollmentManager {
     }
 
     private let config: VouchflowConfig
-    private let keychainManager: KeychainManager
+    private let keychainManager: KeychainBackend
     private let keyManager: SecureEnclaveKeyManager
     private let attestationProvider: AttestationProvider
     private let apiClient: VouchflowAPIClient
 
     init(
         config: VouchflowConfig,
-        keychainManager: KeychainManager,
+        keychainManager: KeychainBackend,
         keyManager: SecureEnclaveKeyManager,
         attestationProvider: AttestationProvider,
         apiClient: VouchflowAPIClient

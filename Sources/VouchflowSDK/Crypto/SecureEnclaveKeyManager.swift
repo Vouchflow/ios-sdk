@@ -30,14 +30,14 @@ final class SecureEnclaveKeyManager {
     // MARK: - Persistence
 
     /// Stores the key's opaque `dataRepresentation` in the Keychain.
-    func storeKey(_ key: SecureEnclave.P256.Signing.PrivateKey, in keychain: KeychainManager) throws {
+    func storeKey(_ key: SecureEnclave.P256.Signing.PrivateKey, in keychain: KeychainBackend) throws {
         try keychain.write(key: KeychainKey.seKeyData, value: key.dataRepresentation.base64EncodedString())
     }
 
     /// Loads the private key from the Keychain.
     ///
     /// Returns `nil` if no key has been stored (e.g. FRESH_ENROLLMENT or REINSTALL state).
-    func loadKey(from keychain: KeychainManager) throws -> SecureEnclave.P256.Signing.PrivateKey? {
+    func loadKey(from keychain: KeychainBackend) throws -> SecureEnclave.P256.Signing.PrivateKey? {
         guard let base64 = try keychain.read(key: KeychainKey.seKeyData),
               let data = Data(base64Encoded: base64) else {
             return nil
@@ -46,12 +46,12 @@ final class SecureEnclaveKeyManager {
     }
 
     /// Deletes the stored key handle from the Keychain.
-    func deleteKey(from keychain: KeychainManager) throws {
+    func deleteKey(from keychain: KeychainBackend) throws {
         try keychain.delete(key: KeychainKey.seKeyData)
     }
 
     /// Whether a key handle exists in the Keychain (does not verify the key is still valid).
-    func keyExists(in keychain: KeychainManager) throws -> Bool {
+    func keyExists(in keychain: KeychainBackend) throws -> Bool {
         try keychain.exists(key: KeychainKey.seKeyData)
     }
 }

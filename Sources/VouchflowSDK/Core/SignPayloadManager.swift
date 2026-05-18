@@ -16,7 +16,7 @@ import LocalAuthentication
 final class SignPayloadManager {
 
     private let config: VouchflowConfig
-    private let keychainManager: KeychainManager
+    private let keychainManager: KeychainBackend
     private let keyManager: SecureEnclaveKeyManager
     private let attestationProvider: AttestationProvider
     private let enrollmentManager: EnrollmentManager
@@ -24,7 +24,7 @@ final class SignPayloadManager {
 
     init(
         config: VouchflowConfig,
-        keychainManager: KeychainManager,
+        keychainManager: KeychainBackend,
         keyManager: SecureEnclaveKeyManager,
         attestationProvider: AttestationProvider,
         enrollmentManager: EnrollmentManager,

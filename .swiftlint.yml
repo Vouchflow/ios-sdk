@@ -1,0 +1,47 @@
+# SwiftLint configuration for the Vouchflow iOS SDK.
+#
+# Purpose: structurally enforce the "an SDK must never crash the host app" contract.
+# `try!`, `as!`, and `fatalError(...)` are crash vectors — they are errors here, so a
+# regression fails CI instead of relying on a reviewer to spot it. The SDK source is
+# currently free of all three; this keeps it that way.
+#
+# Only `Sources/` is linted — test code may use force operators freely.
+
+included:
+  - Sources
+
+opt_in_rules:
+  - force_unwrapping
+
+disabled_rules:
+  - line_length
+  - todo
+  - identifier_name
+  - type_body_length
+  - type_name
+  - file_length
+  - function_body_length
+  - function_parameter_count
+  - cyclomatic_complexity
+  - large_tuple
+  - nesting
+
+# `try!` — crashes on any thrown error.
+force_try:
+  severity: error
+
+# `as!` — crashes on a failed cast.
+force_cast:
+  severity: error
+
+# `x!` — surfaced as a warning. Some uses are provably safe (e.g. `URL(string:)` on a
+# compile-time-constant string); a warning flags new ones for review without blocking.
+force_unwrapping:
+  severity: warning
+
+custom_rules:
+  no_fatal_error:
+    name: "No fatalError in SDK"
+    regex: '\bfatalError\s*\('
+    message: "fatalError() crashes the host app — throw a VouchflowError instead."
+    severity: error

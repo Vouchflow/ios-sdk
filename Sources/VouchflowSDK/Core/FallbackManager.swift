@@ -8,10 +8,10 @@ import CryptoKit
 /// auto-triggers it.
 final class FallbackManager {
 
-    private let keychainManager: KeychainManager
+    private let keychainManager: KeychainBackend
     private let apiClient: VouchflowAPIClient
 
-    init(keychainManager: KeychainManager, apiClient: VouchflowAPIClient) {
+    init(keychainManager: KeychainBackend, apiClient: VouchflowAPIClient) {
         self.keychainManager = keychainManager
         self.apiClient = apiClient
     }

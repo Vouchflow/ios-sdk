@@ -35,6 +35,14 @@ public struct VouchflowConfig {
     /// Leave `nil` for standard single-app usage.
     public let keychainAccessGroup: String?
 
+    /// When `true` (default), the device token is persisted in the OS Keychain, so it
+    /// survives app reinstall. When `false`, the SDK uses only process-lifetime in-memory
+    /// storage — the token does not survive app relaunch, and each launch re-enrolls.
+    /// Set `false` for environments that restrict or forbid Keychain use. Note: even when
+    /// `true`, the SDK silently falls back to in-memory storage if the Keychain turns out to
+    /// be unavailable on the device or profile.
+    public let keychainStorage: Bool
+
     /// SHA-256 hash of the Vouchflow leaf TLS certificate's SubjectPublicKeyInfo (DER, base64-encoded).
     ///
     /// SHA-256 hash of the Let's Encrypt intermediate CA's SubjectPublicKeyInfo serving
@@ -53,13 +61,15 @@ public struct VouchflowConfig {
         environment: VouchflowEnvironment = .production,
         keychainAccessGroup: String? = nil,
         leafCertificatePin: String = "iFvwVyJSxnQdyaUvUERIf+8qk7gRze3612JMwoO3zdU=",
-        intermediateCertificatePin: String = "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
+        intermediateCertificatePin: String = "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+        keychainStorage: Bool = true
     ) {
         self.apiKey = apiKey
         self.environment = environment
         self.keychainAccessGroup = keychainAccessGroup
         self.leafCertificatePin = leafCertificatePin
         self.intermediateCertificatePin = intermediateCertificatePin
+        self.keychainStorage = keychainStorage
     }
 
     var hasTodoPlaceholderPins: Bool {

@@ -23,7 +23,7 @@ import LocalAuthentication
 final class VerificationManager {
 
     private let config: VouchflowConfig
-    private let keychainManager: KeychainManager
+    private let keychainManager: KeychainBackend
     private let keyManager: SecureEnclaveKeyManager
     private let challengeProcessor: ChallengeProcessor
     private let sessionCache: SessionCache
@@ -38,7 +38,7 @@ final class VerificationManager {
 
     init(
         config: VouchflowConfig,
-        keychainManager: KeychainManager,
+        keychainManager: KeychainBackend,
         keyManager: SecureEnclaveKeyManager,
         challengeProcessor: ChallengeProcessor,
         sessionCache: SessionCache,

@@ -41,6 +41,17 @@ final class VouchflowConfigTests: XCTestCase {
         XCTAssertFalse(config.hasTodoPlaceholderPins)
     }
 
+    // ── keychainStorage opt-out ───────────────────────────────────────────────
+
+    func test_keychainStorage_defaultsToTrue() {
+        XCTAssertTrue(VouchflowConfig(apiKey: "vsk_live_test").keychainStorage)
+    }
+
+    func test_keychainStorage_canBeDisabled() {
+        let config = VouchflowConfig(apiKey: "vsk_live_test", keychainStorage: false)
+        XCTAssertFalse(config.keychainStorage)
+    }
+
     // ── Default values ────────────────────────────────────────────────────────
 
     func test_defaultEnvironmentIsProduction() {

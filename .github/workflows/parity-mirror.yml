@@ -1,0 +1,39 @@
+name: Parity mirror
+
+# When a PR labelled `parity:needed` merges, open a tracking issue in the Android SDK repo
+# so the same change is not forgotten on the other platform. See the parity spec
+# (android-sdk/SDK_PARITY_SPEC.md) §6.
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  mirror:
+    if: >-
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'parity:needed')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open tracking issue in android-sdk
+        env:
+          # A fine-grained PAT or GitHub App token with Issues:write on Vouchflow/android-sdk.
+          # The default GITHUB_TOKEN cannot write to another repository — set this secret
+          # in repo settings for the mirror to fire. Until then the step no-ops.
+          GH_TOKEN: ${{ secrets.PARITY_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::PARITY_MIRROR_TOKEN not set — skipping android-sdk mirror issue. See the parity spec §6."
+            exit 0
+          fi
+          gh issue create \
+            --repo Vouchflow/android-sdk \
+            --title "Parity: ${{ github.event.pull_request.title }}" \
+            --body "$(printf '%s\n' \
+              "A \`parity:needed\` change merged in ios-sdk. Implement the Android counterpart, or record it as an accepted divergence in SDK_PARITY_SPEC.md §5." \
+              "" \
+              "- Source PR: ${{ github.event.pull_request.html_url }}" \
+              "- Contract: SDK_PARITY_SPEC.md — §3 (API surface), §4 (storage), §5 (accepted divergences)" \
+              "" \
+              "Close only when the counterpart ships or the divergence is recorded.")"

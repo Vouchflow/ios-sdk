@@ -30,6 +30,16 @@ jobs:
             fi
           done
 
+      - name: SwiftLint
+        run: |
+          set -euo pipefail
+          if ! command -v swiftlint >/dev/null 2>&1; then
+            brew install swiftlint
+          fi
+          swiftlint --version
+          # Errors (force_try / force_cast / fatalError) fail the job; warnings do not.
+          swiftlint lint --reporter github-actions-logging
+
       - name: Build & test (unit + integration)
         timeout-minutes: 30
         # Two-pass test run against the same Simulator:

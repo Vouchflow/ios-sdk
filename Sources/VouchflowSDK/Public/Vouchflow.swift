@@ -42,7 +42,7 @@ public final class Vouchflow {
     private var verificationManager: VerificationManager?
     private var fallbackManager: FallbackManager?
     private var signPayloadManager: SignPayloadManager?
-    private var keychainManager: KeychainManager?
+    private var keychainManager: KeychainBackend?
 
     private init() {}
 
@@ -59,7 +59,7 @@ public final class Vouchflow {
 
         lock.withLock {
             _config = config
-            let keychain = KeychainManager(accessGroup: config.keychainAccessGroup)
+            let keychain: KeychainBackend = KeychainBackendFactory.make(config: config)
             let apiClient = VouchflowAPIClient(config: config)
             let keyManager = SecureEnclaveKeyManager()
             let challengeProcessor = ChallengeProcessor()

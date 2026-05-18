@@ -15,28 +15,32 @@ enum KeychainKey {
     static let appAttestKeyId = "vs_app_attest_key_id"
 }
 
-/// Wraps Security framework Keychain operations.
+/// Wraps Security framework Keychain operations. Conforms to `KeychainBackend`.
 ///
 /// All items use `kSecAttrAccessibleAfterFirstUnlock` so the SDK can operate in the background
-/// (e.g. during silent push handling) after the device has been unlocked at least once since boot.
-/// This setting causes items to survive app deletion and reinstall — intentional for device
-/// token persistence.
-final class KeychainManager {
+/// (e.g. during silent push handling) after the device has been unlocked at least once since
+/// boot. This setting causes items to survive app deletion and reinstall — intentional for
+/// device token persistence.
+///
+/// ## Self-healing fallback
+/// If the Keychain is structurally unavailable — `errSecMissingEntitlement`, which happens for
+/// SPM `.testTarget` bundles on Simulator and for some MDM-managed configurations — this
+/// manager transparently switches to a fallback backend for the rest of its lifetime
+/// (`InMemoryKeychainBackend` on device, `UserDefaultsKeychainBackend` on Simulator). The
+/// device re-enrolls on next launch. This mirrors the Android SDK's AccountManager →
+/// encrypted-storage fallback: a storage failure degrades gracefully, never fatal to the host.
+///
+/// Transient failures — `errSecInteractionNotAllowed`, i.e. the device is locked — are
+/// surfaced as thrown errors so the caller can retry, rather than permanently demoting to the
+/// fallback.
+final class KeychainManager: KeychainBackend {
     private let service = "dev.vouchflow.sdk"
     private let accessGroup: String?
-    private let fallbackPrefix = "vsk_fb_"
 
-    /// Self-healing fallback for SPM .testTarget on Simulator.
-    ///
-    /// SPM unit-test bundles loaded into the system `xctest` host on Simulator
-    /// can't carry Keychain entitlements, so all `SecItem*` calls return
-    /// `errSecMissingEntitlement` (-34018). When that happens, we transparently
-    /// switch to UserDefaults-backed persistence for the rest of this manager's
-    /// lifetime. Compile-time `#if targetEnvironment(simulator)` excludes this
-    /// path entirely from real-device builds — production never falls back.
-    #if targetEnvironment(simulator)
-    private var useFallback = false
-    #endif
+    /// Activated on the first `errSecMissingEntitlement`. Once set, every operation routes
+    /// here. Guarded by `lock`.
+    private var fallback: KeychainBackend?
+    private let lock = NSLock()
 
     init(accessGroup: String? = nil) {
         self.accessGroup = accessGroup
@@ -45,11 +49,9 @@ final class KeychainManager {
     // MARK: - Read
 
     func read(key: String) throws -> String? {
-        #if targetEnvironment(simulator)
-        if useFallback {
-            return UserDefaults.standard.string(forKey: fallbackPrefix + key)
+        if let fallback = activeFallback() {
+            return try fallback.read(key: key)
         }
-        #endif
 
         var query = baseQuery(for: key)
         query[kSecReturnData as String] = true
@@ -68,13 +70,9 @@ final class KeychainManager {
             return nil
         case errSecInteractionNotAllowed:
             throw KeychainError.accessDenied
+        case errSecMissingEntitlement:
+            return try activateFallback().read(key: key)
         default:
-            #if targetEnvironment(simulator)
-            if status == errSecMissingEntitlement {
-                useFallback = true
-                return UserDefaults.standard.string(forKey: fallbackPrefix + key)
-            }
-            #endif
             throw KeychainError.operationFailed(status: status)
         }
     }
@@ -82,17 +80,15 @@ final class KeychainManager {
     // MARK: - Write
 
     func write(key: String, value: String) throws {
-        #if targetEnvironment(simulator)
-        if useFallback {
-            UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
+        if let fallback = activeFallback() {
+            try fallback.write(key: key, value: value)
             return
         }
-        #endif
 
         let data = Data(value.utf8)
         var query = baseQuery(for: key)
 
-        // Attempt update first; fall through to insert if item doesn't exist.
+        // Attempt update first; fall through to insert if the item doesn't exist.
         let updateStatus = SecItemUpdate(
             query as CFDictionary,
             [kSecValueData as String: data] as CFDictionary
@@ -105,24 +101,17 @@ final class KeychainManager {
             query[kSecValueData as String] = data
             query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let insertStatus = SecItemAdd(query as CFDictionary, nil)
-            guard insertStatus == errSecSuccess else {
-                #if targetEnvironment(simulator)
-                if insertStatus == errSecMissingEntitlement {
-                    useFallback = true
-                    UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
-                    return
-                }
-                #endif
+            switch insertStatus {
+            case errSecSuccess:
+                return
+            case errSecMissingEntitlement:
+                try activateFallback().write(key: key, value: value)
+            default:
                 throw KeychainError.operationFailed(status: insertStatus)
             }
+        case errSecMissingEntitlement:
+            try activateFallback().write(key: key, value: value)
         default:
-            #if targetEnvironment(simulator)
-            if updateStatus == errSecMissingEntitlement {
-                useFallback = true
-                UserDefaults.standard.set(value, forKey: fallbackPrefix + key)
-                return
-            }
-            #endif
             throw KeychainError.operationFailed(status: updateStatus)
         }
     }
@@ -130,23 +119,20 @@ final class KeychainManager {
     // MARK: - Delete
 
     func delete(key: String) throws {
-        #if targetEnvironment(simulator)
-        if useFallback {
-            UserDefaults.standard.removeObject(forKey: fallbackPrefix + key)
+        if let fallback = activeFallback() {
+            try fallback.delete(key: key)
             return
         }
-        #endif
 
         let query = baseQuery(for: key)
         let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            #if targetEnvironment(simulator)
-            if status == errSecMissingEntitlement {
-                useFallback = true
-                UserDefaults.standard.removeObject(forKey: fallbackPrefix + key)
-                return
-            }
-            #endif
+
+        switch status {
+        case errSecSuccess, errSecItemNotFound:
+            return
+        case errSecMissingEntitlement:
+            try activateFallback().delete(key: key)
+        default:
             throw KeychainError.operationFailed(status: status)
         }
     }
@@ -158,6 +144,32 @@ final class KeychainManager {
     }
 
     // MARK: - Private
+
+    /// Returns the fallback backend if it has been activated, else `nil`.
+    private func activeFallback() -> KeychainBackend? {
+        lock.lock(); defer { lock.unlock() }
+        return fallback
+    }
+
+    /// Activates (once) and returns the fallback backend. Idempotent and thread-safe.
+    @discardableResult
+    private func activateFallback() -> KeychainBackend {
+        lock.lock(); defer { lock.unlock() }
+        if let existing = fallback {
+            return existing
+        }
+        VouchflowLogger.warn(
+            "[VouchflowSDK] Keychain unavailable (errSecMissingEntitlement) — using fallback "
+                + "storage. Token persistence may not survive an app reinstall."
+        )
+        #if targetEnvironment(simulator)
+        let created: KeychainBackend = UserDefaultsKeychainBackend()
+        #else
+        let created: KeychainBackend = InMemoryKeychainBackend()
+        #endif
+        fallback = created
+        return created
+    }
 
     private func baseQuery(for key: String) -> [String: Any] {
         var query: [String: Any] = [

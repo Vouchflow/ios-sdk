@@ -105,7 +105,7 @@ final class VouchflowAPIClient {
         path: String,
         body: RequestBody
     ) async throws -> ResponseBody {
-        let url = config.environment.baseURL.appendingPathComponent(path)
+        let url = endpointURL(path)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -176,6 +176,11 @@ final class VouchflowAPIClient {
                 message: message
             )
         }
+    }
+
+    private func endpointURL(_ path: String) -> URL {
+        let relativePath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: relativePath, relativeTo: config.environment.baseURL)!.absoluteURL
     }
 }
 

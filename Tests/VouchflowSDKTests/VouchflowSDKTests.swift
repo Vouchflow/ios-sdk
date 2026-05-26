@@ -195,13 +195,14 @@ final class EmailHashTests: XCTestCase {
 
     /// Local copy of the sha256Hex helper. Kept in sync with FallbackManager.
     private func sha256Hex(_ input: String) -> String {
-        let digest = SHA256.hash(data: Data(input.utf8))
+        let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let digest = SHA256.hash(data: Data(normalized.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    func test_sha256OfKnownEmail() {
+    func test_sha256OfKnownEmail_normalizesWhitespaceAndCase() {
         // Authoritative reference value for SHA-256("user@example.com").
-        let result = sha256Hex("user@example.com")
+        let result = sha256Hex("  User@Example.COM  ")
         XCTAssertEqual(result, "b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514")
     }
 

@@ -110,7 +110,7 @@ final class SignPayloadManager {
         signingInput.append(challengeBytes)
 
         // 3. Biometric gate (same shape as VerificationManager.signChallenge)
-        try await evaluateBiometric()
+        try await evaluateBiometric(sessionId: initResponse.sessionId)
 
         // 4. SE signature over signing_input
         let signature: P256.Signing.ECDSASignature
@@ -182,7 +182,7 @@ final class SignPayloadManager {
     /// callback never fires on iOS 17/18 Simulator when no biometric is
     /// enrolled, and any caller-side timeout hangs the test runner.
     /// See `VerificationManager.evaluateBiometric` for the full reasoning.
-    private func evaluateBiometric() async throws {
+    private func evaluateBiometric(sessionId: String) async throws {
         let context = LAContext()
         var canEvalErr: NSError?
         if !context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &canEvalErr) {
@@ -199,14 +199,14 @@ final class SignPayloadManager {
                     } else if let err = error as? LAError {
                         switch err.code {
                         case .userCancel:
-                            cont.resume(throwing: VouchflowError.biometricCancelled(sessionId: ""))
+                            cont.resume(throwing: VouchflowError.biometricCancelled(sessionId: sessionId))
                         case .passcodeNotSet, .biometryNotAvailable, .biometryNotEnrolled:
                             cont.resume(throwing: VouchflowError.biometricUnavailable)
                         default:
-                            cont.resume(throwing: VouchflowError.biometricFailed(sessionId: ""))
+                            cont.resume(throwing: VouchflowError.biometricFailed(sessionId: sessionId))
                         }
                     } else {
-                        cont.resume(throwing: VouchflowError.biometricFailed(sessionId: ""))
+                        cont.resume(throwing: VouchflowError.biometricFailed(sessionId: sessionId))
                     }
                 }
             }

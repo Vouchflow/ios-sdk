@@ -16,7 +16,7 @@ public enum VerificationContext: String, Encodable {
     case sensitiveAction = "sensitive_action"
 }
 
-/// The reason passed to `requestFallback(sessionId:email:reason:)`.
+/// The reason passed to `requestFallback(email:reason:)`.
 public enum FallbackReason: String, Encodable {
     case attestationUnavailable = "attestation_unavailable"
     case attestationFailed = "attestation_failed"
@@ -101,7 +101,7 @@ public struct FallbackSignals {
     public let timeToCompleteSeconds: Int
 }
 
-/// Returned by `requestFallback(sessionId:email:reason:)`.
+/// Returned by `requestFallback(email:reason:)`.
 /// Pass `fallbackSessionId` to `submitFallbackOTP(sessionId:otp:)`.
 public struct FallbackResult {
     /// Identifier for this fallback session. Pass to `submitFallbackOTP(sessionId:otp:)`.
@@ -115,7 +115,7 @@ public struct FallbackResult {
 /// The result of a successful `signPayload(...)` call.
 ///
 /// The customer's backend verifies `assertion` against Vouchflow's published
-/// JWKs at `https://api.vouchflow.dev/v1/.well-known/jwks.json` — no
+/// JWKs at `https://api.vouchflow.dev/.well-known/jwks.json` — no
 /// platform cryptography required server-side.
 public struct SignedBundle {
     /// Canonicalized JSON string (RFC 8785 JCS) that was actually signed.
@@ -141,4 +141,3 @@ public struct SignedBundle {
     /// Always `.ios` for this SDK. Mirrored from the JWS `platform` claim.
     public let platform: String
 }
-

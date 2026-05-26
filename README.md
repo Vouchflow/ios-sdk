@@ -20,7 +20,7 @@ Or add it to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/vouchflow/ios-sdk", from: "1.0.0"), // replace with latest tag
+    .package(url: "https://github.com/vouchflow/ios-sdk", from: "2.1.2"), // replace with latest tag
 ],
 targets: [
     .target(name: "YourApp", dependencies: ["VouchflowSDK"]),
@@ -138,21 +138,19 @@ Never call `GET /v1/device/:token/reputation` from mobile — it requires a read
 do {
     let result = try await Vouchflow.shared.verify(context: .login)
     // success
-} catch VouchflowError.biometricCancelled(let sessionId) {
+} catch VouchflowError.biometricCancelled(_) {
     // User tapped Cancel on the Face ID / Touch ID prompt.
     // Show a retry button. Optionally offer email fallback:
     let fallback = try await Vouchflow.shared.requestFallback(
-        sessionId: sessionId,
         email: currentUserEmail,
         reason: .biometricCancelled
     )
     showOTPInput(expiresAt: fallback.expiresAt)
 
-} catch VouchflowError.biometricFailed(let sessionId) {
+} catch VouchflowError.biometricFailed(_) {
     // Biometric failed (wrong face/finger, lockout, hardware error).
     // Offer fallback or hard-fail depending on your policy.
     let fallback = try await Vouchflow.shared.requestFallback(
-        sessionId: sessionId,
         email: currentUserEmail,
         reason: .biometricFailed
     )
@@ -184,11 +182,10 @@ When biometric verification fails or is unavailable, you can offer email OTP as 
 
 ### Step 1 — Initiate fallback
 
-Call `requestFallback` with the `sessionId` from the caught error and the user's email address.
+Call `requestFallback` after catching `biometricFailed` or `biometricCancelled`. The SDK keeps the active verification session internally, so you pass only the user's email address and the reason.
 
 ```swift
 let fallback = try await Vouchflow.shared.requestFallback(
-    sessionId: sessionId,    // from VouchflowError.biometricFailed or .biometricCancelled
     email: userEmail,
     reason: .biometricFailed
 )
@@ -205,6 +202,22 @@ let result = try await Vouchflow.shared.submitFallbackOTP(
 )
 // result.verified   — Bool
 // result.confidence — always .low for email fallback
+```
+
+## Payload signing
+
+Use `signPayload()` when the proof must include exactly what the user approved, such as a transfer, mandate, or high-risk account change. The SDK canonicalizes the payload with RFC 8785 JCS, presents the biometric prompt, and returns a Vouchflow-signed JWS that your backend verifies against `https://api.vouchflow.dev/.well-known/jwks.json`.
+
+```swift
+let signed = try await Vouchflow.shared.signPayload(
+    ["v": 1, "id": "mand_abc", "scope": "send"],
+    context: "mandate_signing",
+    minimumConfidence: .high // default
+)
+
+// signed.payload         — canonical JSON string the user approved
+// signed.assertion       — Vouchflow-signed JWS for your backend
+// signed.signingDeviceId — sdv_... stable credential identifier
 ```
 
 ### Fallback reasons
@@ -228,6 +241,7 @@ Pass the most specific reason that applies:
 | `configure(_:)` | One-time setup. Call before any other SDK method. |
 | `cachedDeviceToken` | Reads enrolled device token from Keychain. No network. Returns `nil` if not enrolled. |
 | `verify(context:minimumConfidence:)` | Full verification: enrollment, biometric, challenge signing. |
+| `signPayload(_:context:minimumConfidence:)` | Signs a canonical payload with biometric confirmation and returns a Vouchflow JWS. |
 | `requestFallback(email:reason:)` | Initiates email OTP fallback after a biometric error. |
 | `submitFallbackOTP(sessionId:otp:)` | Submits the OTP to complete fallback verification. |
 | `reset()` | Clears all local enrollment data. Next `verify()` re-enrolls. |

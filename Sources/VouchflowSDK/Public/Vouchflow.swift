@@ -13,9 +13,9 @@ import Foundation
 /// do {
 ///     let result = try await Vouchflow.shared.verify(context: .signup)
 ///     // result.verified, result.confidence, result.deviceToken, result.signals
-/// } catch VouchflowError.biometricCancelled {
+/// } catch VouchflowError.biometricCancelled(_) {
 ///     // Show retry button
-/// } catch VouchflowError.biometricFailed {
+/// } catch VouchflowError.biometricFailed(_) {
 ///     let fallback = try await Vouchflow.shared.requestFallback(
 ///         email: userEmail,
 ///         reason: .biometricFailed
@@ -185,7 +185,7 @@ public final class Vouchflow {
     ///
     /// The returned `SignedBundle.assertion` is a JWS signed by Vouchflow.
     /// Your backend verifies it against
-    /// `https://api.vouchflow.dev/v1/.well-known/jwks.json` with any JWT
+    /// `https://api.vouchflow.dev/.well-known/jwks.json` with any JWT
     /// library — no platform cryptography on the server side.
     ///
     /// - Parameters:

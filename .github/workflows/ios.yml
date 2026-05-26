@@ -45,9 +45,10 @@ jobs:
         # Two-pass test run against the same Simulator:
         #
         # Pass 1 — no biometric enrolled (fresh Simulator):
-        #   Unit tests, EnrollmentIntegrationTests, and no-auth PasskeyType tests run fully.
-        #   Biometric test skips via canEvaluatePolicy guard.
-        #   Passcode test skips via #if targetEnvironment(simulator) guard.
+        #   Unit tests run fully. Integration coverage stays in pass 2 below,
+        #   because GitHub-hosted macOS runners can spend 10+ minutes waiting
+        #   for the integration test host to become ready before biometrics are
+        #   enrolled.
         #
         # Pass 2 — Face ID enrolled (xcrun simctl io biometricEnroll):
         #   Biometric test runs; a background watcher sends biometricMatch every second
@@ -81,7 +82,8 @@ jobs:
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 120 \
-            -maximum-test-execution-time-allowance 180
+            -maximum-test-execution-time-allowance 180 \
+            -skip-testing "VouchflowSDKIntegrationTests"
           PASS1_EXIT=$?
           set -e
 

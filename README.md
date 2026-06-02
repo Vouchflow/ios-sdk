@@ -20,7 +20,7 @@ Or add it to `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/vouchflow/ios-sdk", from: "2.1.2"), // replace with latest tag
+    .package(url: "https://github.com/vouchflow/ios-sdk", from: "2.1.3"), // replace with latest tag
 ],
 targets: [
     .target(name: "YourApp", dependencies: ["VouchflowSDK"]),
@@ -305,9 +305,11 @@ No `customerId` is needed in the SDK — your customer account is identified ser
 | Environment | Base URL | Key prefix |
 |---|---|---|
 | `.production` | `https://api.vouchflow.dev/v1` | `vsk_live_` |
-| `.sandbox` | `https://sandbox.api.vouchflow.dev/v1` | `vsk_sandbox_` |
+| `.sandbox` | `https://api.vouchflow.dev/v1` | `vsk_sandbox_` |
 
-Sandbox verifications are free, isolated from the network graph, and do not affect billing. The SDK selects the correct host automatically based on the `environment` setting.
+Sandbox and production traffic use the same production API host. The API key prefix selects the isolated sandbox or live data plane server-side.
+
+Sandbox verifications are free, isolated from the network graph, and do not affect billing. The SDK sends both environments to the production API host; the `environment` setting and API key prefix select the correct server-side data plane.
 
 ### Certificate pinning
 

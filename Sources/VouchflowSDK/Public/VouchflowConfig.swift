@@ -10,7 +10,7 @@ public enum VouchflowEnvironment {
         case .production:
             return URL(string: "https://api.vouchflow.dev")!
         case .sandbox:
-            return URL(string: "https://sandbox.api.vouchflow.dev")!
+            return URL(string: "https://api.vouchflow.dev")!
         }
     }
 }

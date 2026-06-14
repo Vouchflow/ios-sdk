@@ -43,27 +43,58 @@ public struct VouchflowConfig {
     /// be unavailable on the device or profile.
     public let keychainStorage: Bool
 
-    /// SHA-256 hash of the Vouchflow leaf TLS certificate's SubjectPublicKeyInfo (DER, base64-encoded).
+    /// Raw base64-encoded SHA-256 of the **server leaf certificate's** SubjectPublicKeyInfo.
+    /// No prefix (no `sha256/`, no `pin-sha256=`). To compute against the live endpoint:
     ///
-    /// SHA-256 hash of the Let's Encrypt intermediate CA's SubjectPublicKeyInfo serving
-    /// api.vouchflow.dev. Pinned at intermediate (not leaf) level to survive Fly.io's
-    /// 60-day Let's Encrypt leaf rotations without requiring an SDK release.
-    /// In debug builds, placeholder values disable pinning with a runtime warning.
-    /// In release builds, placeholder values cause all requests to fail.
+    /// ```bash
+    /// openssl s_client -connect api.vouchflow.dev:443 \
+    ///     -servername api.vouchflow.dev -showcerts < /dev/null 2>/dev/null \
+    ///   | awk '/BEGIN CERT/{c++} c==1,/END CERT/' \
+    ///   | openssl x509 -pubkey -noout \
+    ///   | openssl pkey -pubin -outform DER \
+    ///   | openssl dgst -sha256 -binary | base64
+    /// ```
+    ///
+    /// Placeholder values (starting with `TODO`) disable pinning in debug builds and reject
+    /// all requests in release builds.
     public let leafCertificatePin: String
 
-    /// SHA-256 hash of ISRG Root X1 (Let's Encrypt root CA). Essentially permanent —
-    /// serves as a safety net if the intermediate CA is ever rotated.
+    /// Raw base64-encoded SHA-256 of the **intermediate CA's** SubjectPublicKeyInfo (currently
+    /// Let's Encrypt **YE1**). Same format as `leafCertificatePin` — no prefix. Pinning at
+    /// the intermediate lets the leaf rotate every 60 days (Fly.io's Let's Encrypt cadence)
+    /// without forcing an SDK release.
+    ///
+    /// Note: do NOT use ISRG Root X1 here. Fly.io's TLS handshake doesn't include the root,
+    /// so a root-level pin will never match anything in the served chain.
+    ///
+    /// Same openssl one-liner as `leafCertificatePin`, but use `c==2` for the second cert.
     public let intermediateCertificatePin: String
 
     public init(
         apiKey: String,
         environment: VouchflowEnvironment = .production,
         keychainAccessGroup: String? = nil,
-        leafCertificatePin: String = "iFvwVyJSxnQdyaUvUERIf+8qk7gRze3612JMwoO3zdU=",
-        intermediateCertificatePin: String = "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",
+        // Live Let's Encrypt YE1 SPKI pins. Refreshed 2026-06-14 against the production chain.
+        // When Let's Encrypt rotates intermediates again, refresh both values here using the
+        // openssl one-liner documented on `leafCertificatePin`.
+        leafCertificatePin: String = "NQ7reZqY0tQjef9LBQwbs0gHjrdrroWrd+scM74zQrU=",
+        intermediateCertificatePin: String = "brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=",
         keychainStorage: Bool = true
     ) {
+        // Most common pinning misconfig we've seen: integrators read OkHttp/AlamoFire docs,
+        // see the `sha256/<value>` format, and prepend `sha256/` here. The SDK works in raw
+        // base64 — passing a prefixed value would never match the SDK's own SPKI computation.
+        // Fail at configure() with a message naming the fix, before the first network call.
+        precondition(
+            !leafCertificatePin.hasPrefix("sha256/"),
+            "leafCertificatePin must be raw base64 SPKI SHA-256, NOT the OkHttp \"sha256/<hash>\" form. " +
+                "The SDK compares raw values. Got: \(leafCertificatePin)"
+        )
+        precondition(
+            !intermediateCertificatePin.hasPrefix("sha256/"),
+            "intermediateCertificatePin must be raw base64 SPKI SHA-256, NOT the OkHttp \"sha256/<hash>\" form. " +
+                "Got: \(intermediateCertificatePin)"
+        )
         self.apiKey = apiKey
         self.environment = environment
         self.keychainAccessGroup = keychainAccessGroup

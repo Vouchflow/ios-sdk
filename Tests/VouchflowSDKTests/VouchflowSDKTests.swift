@@ -150,7 +150,7 @@ final class VouchflowErrorTests: XCTestCase {
             .minimumConfidenceUnmet,
             .networkUnavailable,
             .serverError(statusCode: 500, code: nil, message: nil),
-            .pinningFailure,
+            .pinningFailure(hostname: "api.vouchflow.dev", configuredPins: [], servedSpkiSha256: []),
         ]
         // If any two errors accidentally share the same case label, this count would be wrong.
         // Swift enum cases with different associated values are distinct.

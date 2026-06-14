@@ -73,8 +73,24 @@ public enum VouchflowError: Error {
     case serverError(statusCode: Int, code: String?, message: String?)
 
     /// The server's TLS certificate did not match the configured pins.
-    /// This may indicate a MITM attack or a pin rotation that was not deployed to the SDK.
-    case pinningFailure
+    ///
+    /// Either a MITM attack, a Let's Encrypt rotation that left the SDK's pinned values
+    /// stale, or an integrator misconfiguration. The associated values let you tell which:
+    ///
+    /// - `configuredPins` is what you passed in `VouchflowConfig` (raw base64).
+    /// - `servedSpkiSha256` is what the server's chain actually presented today, computed
+    ///   the same way you computed the pin (no `sha256/` prefix).
+    ///
+    /// Compare the two. If your configured leaf doesn't appear in the served list, your
+    /// pin is stale — re-run the openssl one-liner from `VouchflowConfig.leafCertificatePin`
+    /// against the live endpoint to get the current value.
+    ///
+    /// - Parameters:
+    ///   - hostname: Host that failed pinning (e.g. `api.vouchflow.dev`).
+    ///   - configuredPins: Raw base64 SPKI SHA-256 pins from `VouchflowConfig`.
+    ///   - servedSpkiSha256: Raw base64 SPKI SHA-256 of each certificate in the chain the
+    ///     server presented, in the same order. Empty if the chain couldn't be inspected.
+    case pinningFailure(hostname: String, configuredPins: [String], servedSpkiSha256: [String])
 
     // MARK: - signPayload
 

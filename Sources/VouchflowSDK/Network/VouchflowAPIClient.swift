@@ -13,10 +13,15 @@ final class VouchflowAPIClient {
 
     private static let apiVersion = "2026-04-01"
 
+    /// Held strong so we can read `lastFailureServedSpkiSha256` when a pinning challenge
+    /// rejects a connection — URLSession only keeps a weak reference to the delegate.
+    private let pinningDelegate: PinningDelegate
+
     init(config: VouchflowConfig) {
         self.config = config
 
         let pinningDelegate = PinningDelegate(config: config)
+        self.pinningDelegate = pinningDelegate
         self.session = URLSession(
             configuration: .ephemeral,
             delegate: pinningDelegate,
@@ -119,7 +124,16 @@ final class VouchflowAPIClient {
         } catch let urlError as URLError {
             if urlError.code == .cancelled {
                 // URLSession cancels requests when the pinning delegate rejects the challenge.
-                throw VouchflowError.pinningFailure
+                // Pull the served chain the delegate stashed at challenge-time so the
+                // caller can compare against what they configured. .cancelled can in
+                // principle fire for non-pinning reasons (host cancelled the task);
+                // we accept the false positive — every code path that reaches here on
+                // production traffic is a pinning challenge in practice.
+                throw VouchflowError.pinningFailure(
+                    hostname: config.environment.baseURL.host ?? "api.vouchflow.dev",
+                    configuredPins: [config.leafCertificatePin, config.intermediateCertificatePin],
+                    servedSpkiSha256: pinningDelegate.lastFailureServedSpkiSha256
+                )
             }
             throw VouchflowError.networkUnavailable
         }

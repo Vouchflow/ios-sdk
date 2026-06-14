@@ -72,6 +72,59 @@ public enum VouchflowError: Error {
     /// The Vouchflow API returned an unexpected error response.
     case serverError(statusCode: Int, code: String?, message: String?)
 
+    /// The device's persistent token belongs to a different App row on the server.
+    ///
+    /// Surfaces the server's `device_not_owned` 403. The likeliest cause is an
+    /// integrator who created two App rows in the Vouchflow dashboard for what
+    /// the server-side model considers a single app with two key types
+    /// (sandbox + live). Devices enrolled under App A cannot be verified
+    /// through App B's key, even within the same customer.
+    ///
+    /// Recovery options for the integrator:
+    ///
+    /// 1. **Consolidate to one App.** In the dashboard, pick the App whose
+    ///    keys the production build ships with as the canonical one. Use its
+    ///    sandbox key in dev builds, its live key in prod builds.
+    /// 2. **Transfer existing devices to the canonical App.** The server
+    ///    exposes an admin-keyed endpoint:
+    ///
+    ///    ```
+    ///    POST /v1/customers/:id/apps/:appId/devices/transfer
+    ///    Authorization: Bearer $ADMIN_KEY
+    ///    { "fromAppId": "...", "deviceTokens": ["...", "..."] }
+    ///    ```
+    ///
+    ///    Bulk-moves Device + Verification rows from `fromAppId` to the
+    ///    destination App, within the same customer.
+    /// 3. **Wipe and re-enroll.** `Vouchflow.reset()` followed by `verify()`
+    ///    mints a fresh device under whichever App the SDK's current API key
+    ///    resolves to. Loses the device's history (network signals, confidence
+    ///    ceiling, etc.).
+    ///
+    /// Catch this case explicitly rather than letting it fall through to
+    /// `.serverError(403, "device_not_owned", _)` — the recovery is always
+    /// integrator-side, never end-user-side, and the SDK can't decide which
+    /// option (1/2/3) is right.
+    case deviceClaimedElsewhere
+
+    /// Enrollment failed because the device's public key is already registered
+    /// under a different customer or app.
+    ///
+    /// Surfaces the server's `public_key_already_registered` 409. Almost always
+    /// one of:
+    ///
+    /// - The same Secure Enclave key has been used by another tenant (genuine
+    ///   cross-tenant claim — talk to support if unexpected).
+    /// - The integrator is running the SDK against an App whose dashboard row
+    ///   was deleted and re-created; the orphan Device row still holds the
+    ///   public key. Resolution: support to release the orphan.
+    ///
+    /// Notably **not** the same as the old SDK 2.2.x behaviour: as of server
+    /// v59 the same-tenant re-token case (e.g. SDK reset() with a surviving
+    /// Secure Enclave key) succeeds with the existing device token, so this
+    /// error fires only for genuine cross-tenant collisions.
+    case publicKeyAlreadyRegistered
+
     /// The server's TLS certificate did not match the configured pins.
     ///
     /// Either a MITM attack, a Let's Encrypt rotation that left the SDK's pinned values

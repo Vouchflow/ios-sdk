@@ -151,10 +151,12 @@ final class VouchflowErrorTests: XCTestCase {
             .networkUnavailable,
             .serverError(statusCode: 500, code: nil, message: nil),
             .pinningFailure(hostname: "api.vouchflow.dev", configuredPins: [], servedSpkiSha256: []),
+            .deviceClaimedElsewhere,
+            .publicKeyAlreadyRegistered,
         ]
         // If any two errors accidentally share the same case label, this count would be wrong.
         // Swift enum cases with different associated values are distinct.
-        XCTAssertEqual(errors.count, 14, "Should have exactly 14 distinct public error cases")
+        XCTAssertEqual(errors.count, 16, "Should have exactly 16 distinct public error cases")
     }
 
     func test_biometricCancelled_carriesSessionId() {

@@ -26,6 +26,10 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
     private(set) var lastFailureServedSpkiSha256: [String] = []
     private let failureLock = NSLock()
 
+    init(config: VouchflowConfig) {
+        self.config = config
+    }
+
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,

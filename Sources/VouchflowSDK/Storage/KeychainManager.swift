@@ -13,6 +13,11 @@ enum KeychainKey {
     /// Persisted at enrollment so `signPayload` can produce fresh
     /// assertions for the `high` confidence path. ~32 char base64.
     static let appAttestKeyId = "vs_app_attest_key_id"
+    /// "true"/"false" — whether the server attestation-verified the last
+    /// enrollment. Drives one-time self-heal re-enroll for devices that
+    /// enrolled while the server couldn't verify App Attest (server #8): the
+    /// keychain survives reinstall, so without this they'd stay low forever.
+    static let attestationVerified = "vs_attestation_verified"
 }
 
 /// Wraps Security framework Keychain operations. Conforms to `KeychainBackend`.

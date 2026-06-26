@@ -36,6 +36,10 @@ actor EnrollmentManager {
     private let attestationProvider: AttestationProvider
     private let apiClient: VouchflowAPIClient
 
+    /// Guards self-heal to at most one attempt per process launch, so the
+    /// pre-`verify()` `ensureEnrolled()` call can't re-enroll in a loop.
+    private var selfHealAttempted = false
+
     init(
         config: VouchflowConfig,
         keychainManager: KeychainBackend,
@@ -64,6 +68,7 @@ actor EnrollmentManager {
         let state = try detectState()
         switch state {
         case .skipEnrollment:
+            await selfHealIfUnverified()
             return
 
         case .freshEnrollment:
@@ -92,6 +97,38 @@ actor EnrollmentManager {
             let token = try keychainManager.read(key: KeychainKey.deviceToken) ?? ""
             return .reinstall(existingDeviceToken: token)
         case (false, true): return .corrupted
+        }
+    }
+
+    // MARK: - Self-heal
+
+    /// One-time-per-launch recovery for a device that is locally enrolled but
+    /// whose enrollment was never attestation-verified by the server (e.g. it
+    /// enrolled before vouchflow-server#8 was fixed). The iOS keychain survives
+    /// app reinstall, so `detectState()` returns `.skipEnrollment` forever and
+    /// the device is stuck at low confidence with no way to recover.
+    ///
+    /// If App Attest is available and the last enrollment wasn't verified, force
+    /// a fresh re-enroll (new SE + App Attest keys, same device_token) so the
+    /// now-fixed server can verify it. Best-effort: any failure leaves the
+    /// existing enrollment intact and is retried on the next launch. Self-limits
+    /// — once an enrollment verifies, the stored flag is "true" and this no-ops.
+    private func selfHealIfUnverified() async {
+        guard !selfHealAttempted else { return }
+        guard attestationProvider.isSupported else { return }
+        let verified = try? keychainManager.read(key: KeychainKey.attestationVerified)
+        guard verified != "true" else { return }
+        selfHealAttempted = true
+
+        do {
+            VouchflowLogger.warn("[VouchflowSDK] Enrolled but not attestation-verified — re-enrolling to pick up server-side App Attest verification.")
+            let existingToken = try keychainManager.read(key: KeychainKey.deviceToken)
+            // performEnrollment mints + overwrites a fresh SE keypair (keychain
+            // write upserts) and re-attests; passing the existing device_token
+            // re-tokens the same device row server-side rather than orphaning it.
+            try await performEnrollment(reason: "key_invalidated", existingDeviceToken: existingToken)
+        } catch {
+            VouchflowLogger.warn("[VouchflowSDK] Self-heal re-enroll failed; will retry next launch. Error: \(error)")
         }
     }
 
@@ -163,6 +200,12 @@ actor EnrollmentManager {
             if let keyId = attestation?.keyId {
                 try keychainManager.write(key: KeychainKey.appAttestKeyId, value: keyId)
             }
+            // Record whether the server attestation-verified this enrollment so
+            // selfHealIfUnverified() can detect a stuck low-confidence device.
+            try keychainManager.write(
+                key: KeychainKey.attestationVerified,
+                value: response.attestationVerified ? "true" : "false"
+            )
         } catch let keychainError as KeychainError {
             throw keychainError.asVouchflowError
         }

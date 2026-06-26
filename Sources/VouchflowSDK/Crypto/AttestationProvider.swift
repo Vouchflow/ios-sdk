@@ -21,6 +21,11 @@ struct AttestationResult {
 /// `confidence_ceiling: "medium"` for that device.
 final class AttestationProvider {
 
+    /// Whether App Attest is available on this device. False on the Simulator
+    /// and hardware without App Attest support. Used to gate self-heal re-enroll
+    /// so we never loop on a device that legitimately cannot attest.
+    var isSupported: Bool { DCAppAttestService.shared.isSupported }
+
     /// Generates a fresh App Attest key and attestation token using the provided challenge.
     ///
     /// The challenge is the enrollment idempotency key, converted to Data and hashed with

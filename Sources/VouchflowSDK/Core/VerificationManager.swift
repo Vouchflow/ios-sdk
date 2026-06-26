@@ -61,6 +61,8 @@ final class VerificationManager {
         try? keyManager.deleteKey(from: keychainManager)
         try? keychainManager.delete(key: KeychainKey.deviceToken)
         try? keychainManager.delete(key: KeychainKey.pendingToken)
+        try? keychainManager.delete(key: KeychainKey.appAttestKeyId)
+        try? keychainManager.delete(key: KeychainKey.attestationVerified)
         pendingFallbackSessionId = nil
         sessionCache.clear()
         VouchflowLogger.debug("[VouchflowSDK] Reset complete — local enrollment data cleared.")

@@ -113,11 +113,23 @@ actor EnrollmentManager {
     /// now-fixed server can verify it. Best-effort: any failure leaves the
     /// existing enrollment intact and is retried on the next launch. Self-limits
     /// — once an enrollment verifies, the stored flag is "true" and this no-ops.
+    /// Pure trigger condition for `selfHealIfUnverified`, extracted for unit
+    /// testing. Heal when App Attest is available but the last enrollment was
+    /// not attestation-verified — the stored flag is `"false"`, or absent for
+    /// enrollments made before this flag existed. `"true"` means already
+    /// verified (no-op); unsupported devices (Simulator) never heal.
+    static func shouldSelfHeal(appAttestSupported: Bool, storedAttestationVerified: String?) -> Bool {
+        guard appAttestSupported else { return false }
+        return storedAttestationVerified != "true"
+    }
+
     private func selfHealIfUnverified() async {
         guard !selfHealAttempted else { return }
-        guard attestationProvider.isSupported else { return }
-        let verified = try? keychainManager.read(key: KeychainKey.attestationVerified)
-        guard verified != "true" else { return }
+        let storedVerified = (try? keychainManager.read(key: KeychainKey.attestationVerified)) ?? nil
+        guard Self.shouldSelfHeal(
+            appAttestSupported: attestationProvider.isSupported,
+            storedAttestationVerified: storedVerified
+        ) else { return }
         selfHealAttempted = true
 
         do {

@@ -137,9 +137,9 @@ public enum VouchflowError: Error {
     ///
     /// - Parameters:
     ///   - hostname: Host the chain was validated against (e.g. `api.vouchflow.dev`).
-    ///   - reason: The OS-supplied description from `SecTrustEvaluateWithError`. A clock-skew
-    ///     or expiry message points at the server or the device date; a hostname-mismatch
-    ///     message points at an interception proxy.
+    ///   - reason: The TLS-validation diagnostic, normally the OS-supplied description from
+    ///     `SecTrustEvaluateWithError`. A clock-skew or expiry message points at the server
+    ///     or the device date; a hostname-mismatch message points at an interception proxy.
     case trustEvaluationFailure(hostname: String, reason: String)
 
     /// The server's TLS certificate chain passed standard validation but did not match the

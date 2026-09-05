@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// `URLSessionDelegate` that enforces TLS validation plus certificate pinning on all
+/// `URLSessionTaskDelegate` that enforces TLS validation plus certificate pinning on all
 /// Vouchflow API connections.
 ///
 /// Order matters, and it is the whole point of this type:
@@ -39,10 +39,10 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
 
     // MARK: - Failure diagnostics
 
-    /// Why the most recent server-trust challenge was rejected, or `nil` if it was accepted.
+    /// Why this task's server-trust challenge was rejected, or `nil` if it was accepted.
     /// Read from `VouchflowAPIClient` when it catches the resulting `URLError` so the
     /// developer-facing error can distinguish a chain that failed OS validation from one
-    /// that was valid but unpinned. Cleared on every fresh challenge.
+    /// that was valid but unpinned. Cleared when a server-trust challenge is accepted.
     var lastFailureRejection: PinningRejection? {
         failureLock.lock()
         defer { failureLock.unlock() }

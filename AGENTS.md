@@ -17,8 +17,6 @@ there because an SDK must never crash its host app.
 Tag-driven, not push-driven. `VERSION` must equal the tag being pushed or the release job
 fails its own sanity check — bump `VERSION` in the PR, then push `vX.Y.Z` after merge.
 Adding a `VouchflowError` case is a minor bump (see `git log` for 2.3.0 / 2.5.0).
-The "patch version increments automatically on every push to main" paragraph in `README.md`
-describes an older pipeline and no longer matches `ios.yml`.
 
 ## Certificate pinning: validate first, then pin
 

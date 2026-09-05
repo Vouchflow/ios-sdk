@@ -349,8 +349,8 @@ Two distinct errors surface at runtime, and the difference tells you where to lo
 
 ## Releases
 
-The patch version increments automatically on every push to `main`. CI reads the `VERSION` file, bumps the patch digit, commits the change back to `main` with `[skip ci]`, and pushes a `v*` tag. The tag push triggers a separate release job that runs tests, builds the XCFramework, and creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-VERSION.xcframework.zip` attached.
+Releases are tag-driven. Update `VERSION` in the release PR, merge it to `main`, then have a human push the matching `vX.Y.Z` tag. The release job rejects a tag whose version does not exactly match `VERSION`; pushes to `main` build and test only, and never bump or publish a version.
 
-To cut a minor or major release, update the `VERSION` file manually and push to `main`.
+The tag run builds the XCFramework and creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-X.Y.Z.zip` attached.
 
 SPM consumers pin to a version tag and get source distribution automatically — no additional steps required. The attached XCFramework zip is for integrators who prefer binary distribution.

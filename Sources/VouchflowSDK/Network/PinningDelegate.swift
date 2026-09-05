@@ -26,7 +26,7 @@ import Security
 /// - **Debug:** Step 2 is skipped with a runtime warning, so the SDK can be exercised against
 ///   the real server before TLS pins are finalised. Step 1 still runs.
 /// - **Release:** All connections are rejected. Do not ship without real pins.
-final class PinningDelegate: NSObject, URLSessionDelegate {
+final class PinningDelegate: NSObject, URLSessionTaskDelegate {
 
     private let config: VouchflowConfig
 
@@ -68,10 +68,11 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
         failureLock.unlock()
     }
 
-    // MARK: - URLSessionDelegate
+    // MARK: - URLSessionTaskDelegate
 
     func urlSession(
         _ session: URLSession,
+        task: URLSessionTask,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
@@ -110,6 +111,13 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
     /// tests cannot synthesise) so `PinningDelegateTrustTests` can drive it with real
     /// `SecTrust` objects built from fixture certificates.
     func decision(forServerTrust serverTrust: SecTrust) -> PinningDecision {
+        if let preflightDecision = PinningPolicy.preflightDecision(
+            pinsArePlaceholders: config.hasTodoPlaceholderPins,
+            allowPlaceholderPinBypass: Self.allowsPlaceholderPinBypass
+        ) {
+            return preflightDecision
+        }
+
         guard let expectedHost = config.environment.baseURL.host else {
             return .reject(.missingExpectedHost)
         }

@@ -57,6 +57,16 @@ enum PinningDecision: Equatable {
 /// `PinningDelegate` is the thin adapter that supplies the real `SecTrust` results.
 enum PinningPolicy {
 
+    static func preflightDecision(
+        pinsArePlaceholders: Bool,
+        allowPlaceholderPinBypass: Bool
+    ) -> PinningDecision? {
+        guard pinsArePlaceholders && !allowPlaceholderPinBypass else {
+            return nil
+        }
+        return .reject(.placeholderPinsInReleaseBuild)
+    }
+
     /// - Parameters:
     ///   - trustEvaluation: Outcome of `SecTrustEvaluateWithError` against an SSL policy
     ///     bound to the expected hostname.
@@ -73,11 +83,11 @@ enum PinningPolicy {
         pinsArePlaceholders: Bool,
         allowPlaceholderPinBypass: Bool
     ) -> PinningDecision {
-        // Checked first because it is a build-configuration error, not a verdict on the
-        // server: reporting "placeholder pins in a release build" is more actionable than
-        // whatever the chain happens to look like.
-        if pinsArePlaceholders && !allowPlaceholderPinBypass {
-            return .reject(.placeholderPinsInReleaseBuild)
+        if let preflightDecision = preflightDecision(
+            pinsArePlaceholders: pinsArePlaceholders,
+            allowPlaceholderPinBypass: allowPlaceholderPinBypass
+        ) {
+            return preflightDecision
         }
 
         // Standard validation must pass on its own merits, unconditionally — including on

@@ -125,10 +125,29 @@ public enum VouchflowError: Error {
     /// error fires only for genuine cross-tenant collisions.
     case publicKeyAlreadyRegistered
 
-    /// The server's TLS certificate did not match the configured pins.
+    /// The server's TLS chain failed standard X.509 validation and was rejected **before**
+    /// certificate pins were ever consulted.
     ///
-    /// Either a MITM attack, a Let's Encrypt rotation that left the SDK's pinned values
-    /// stale, or an integrator misconfiguration. The associated values let you tell which:
+    /// Raised for an expired or not-yet-valid certificate, a revoked one, a chain that does
+    /// not reach a trusted root, or — most importantly — a certificate that is perfectly
+    /// valid but issued for a different hostname. Distinct from `pinningFailure`: that one
+    /// means "valid chain, wrong key"; this one means "the chain is not trustworthy at all",
+    /// and a matching pin would not have saved it. Pinning is an additional constraint on
+    /// top of OS validation, never a replacement for it.
+    ///
+    /// - Parameters:
+    ///   - hostname: Host the chain was validated against (e.g. `api.vouchflow.dev`).
+    ///   - reason: The TLS-validation diagnostic, normally the OS-supplied description from
+    ///     `SecTrustEvaluateWithError`. A clock-skew or expiry message points at the server
+    ///     or the device date; a hostname-mismatch message points at an interception proxy.
+    case trustEvaluationFailure(hostname: String, reason: String)
+
+    /// The server's TLS certificate chain passed standard validation but did not match the
+    /// configured pins.
+    ///
+    /// Either a MITM by someone holding a chain your OS trusts, a Let's Encrypt rotation that
+    /// left the SDK's pinned values stale, or an integrator misconfiguration. The associated
+    /// values let you tell which:
     ///
     /// - `configuredPins` is what you passed in `VouchflowConfig` (raw base64).
     /// - `servedSpkiSha256` is what the server's chain actually presented today, computed
@@ -137,6 +156,9 @@ public enum VouchflowError: Error {
     /// Compare the two. If your configured leaf doesn't appear in the served list, your
     /// pin is stale — re-run the openssl one-liner from `VouchflowConfig.leafCertificatePin`
     /// against the live endpoint to get the current value.
+    ///
+    /// A chain that fails OS validation surfaces as `trustEvaluationFailure` instead, so a
+    /// stale pin is never confused with an expired certificate.
     ///
     /// - Parameters:
     ///   - hostname: Host that failed pinning (e.g. `api.vouchflow.dev`).

@@ -13,20 +13,10 @@ final class VouchflowAPIClient {
 
     private static let apiVersion = "2026-04-01"
 
-    /// Held strong so we can read `lastFailureServedSpkiSha256` when a pinning challenge
-    /// rejects a connection — URLSession only keeps a weak reference to the delegate.
-    private let pinningDelegate: PinningDelegate
-
     init(config: VouchflowConfig) {
         self.config = config
 
-        let pinningDelegate = PinningDelegate(config: config)
-        self.pinningDelegate = pinningDelegate
-        self.session = URLSession(
-            configuration: .ephemeral,
-            delegate: pinningDelegate,
-            delegateQueue: nil
-        )
+        self.session = URLSession(configuration: .ephemeral)
 
         self.encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -118,9 +108,10 @@ final class VouchflowAPIClient {
         request.setValue(Self.apiVersion, forHTTPHeaderField: "Vouchflow-API-Version")
         request.httpBody = try encoder.encode(body)
 
+        let pinningDelegate = PinningDelegate(config: config)
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: pinningDelegate)
         } catch let urlError as URLError {
             if urlError.code == .cancelled {
                 // URLSession cancels requests when the pinning delegate rejects the challenge.
@@ -129,8 +120,14 @@ final class VouchflowAPIClient {
                 // principle fire for non-pinning reasons (host cancelled the task);
                 // we accept the false positive — every code path that reaches here on
                 // production traffic is a pinning challenge in practice.
+                let hostname = config.environment.baseURL.host ?? "api.vouchflow.dev"
+                if case .trustEvaluationFailed(let reason) = pinningDelegate.lastFailureRejection {
+                    // The chain never reached pin comparison — reporting it as a pin
+                    // mismatch would send the reader chasing a stale-pin theory.
+                    throw VouchflowError.trustEvaluationFailure(hostname: hostname, reason: reason)
+                }
                 throw VouchflowError.pinningFailure(
-                    hostname: config.environment.baseURL.host ?? "api.vouchflow.dev",
+                    hostname: hostname,
                     configuredPins: [config.leafCertificatePin, config.intermediateCertificatePin],
                     servedSpkiSha256: pinningDelegate.lastFailureServedSpkiSha256
                 )

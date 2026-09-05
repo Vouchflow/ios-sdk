@@ -1,34 +1,74 @@
 import Foundation
 import Security
 
-/// `URLSessionDelegate` that enforces certificate pinning on all Vouchflow API connections.
+/// `URLSessionDelegate` that enforces TLS validation plus certificate pinning on all
+/// Vouchflow API connections.
 ///
-/// Two pins are checked:
+/// Order matters, and it is the whole point of this type:
+///
+/// 1. An SSL policy bound to the SDK's configured host is set on the trust object, and
+///    `SecTrustEvaluateWithError` must pass. Expiry, revocation, chain-to-a-trusted-root
+///    and hostname are all checked here, by the OS.
+/// 2. Only then are the configured SPKI pins applied, as an **additional** constraint.
+///
+/// Two pins are checked at step 2:
 /// - **Leaf pin:** SHA-256 of the server's leaf certificate SubjectPublicKeyInfo.
 /// - **Intermediate pin:** SHA-256 of the intermediate CA SubjectPublicKeyInfo.
 ///
 /// Either matching is sufficient (OR semantics), which allows zero-downtime leaf rotation:
 /// deploy new leaf, intermediate pin continues to pass, rotate leaf pin in next SDK release.
 ///
+/// Step 1 is not optional and never was safe to omit — see `PinningPolicy` for why an
+/// intermediate pin without it accepts any certificate that CA ever issued, for any domain.
+///
 /// ## Placeholder pins
 /// During development, pins default to `"TODO-..."` values. Behaviour differs by build type:
-/// - **Debug:** Pinning is skipped with a runtime warning. Allows testing against the real server
-///   before TLS certificates are finalised.
+/// - **Debug:** Step 2 is skipped with a runtime warning, so the SDK can be exercised against
+///   the real server before TLS pins are finalised. Step 1 still runs.
 /// - **Release:** All connections are rejected. Do not ship without real pins.
 final class PinningDelegate: NSObject, URLSessionDelegate {
 
     private let config: VouchflowConfig
 
-    /// Records the SPKI hashes the server presented on the most recent pinning failure.
-    /// Read from `VouchflowAPIClient` when it catches the resulting `URLError` so the
-    /// developer-facing `VouchflowError.pinningFailure` can name what was actually
-    /// served (vs. what the SDK was told to pin). Cleared on every fresh challenge.
-    private(set) var lastFailureServedSpkiSha256: [String] = []
+    private var lastFailure: PinningRejection?
     private let failureLock = NSLock()
 
     init(config: VouchflowConfig) {
         self.config = config
     }
+
+    // MARK: - Failure diagnostics
+
+    /// Why the most recent server-trust challenge was rejected, or `nil` if it was accepted.
+    /// Read from `VouchflowAPIClient` when it catches the resulting `URLError` so the
+    /// developer-facing error can distinguish a chain that failed OS validation from one
+    /// that was valid but unpinned. Cleared on every fresh challenge.
+    var lastFailureRejection: PinningRejection? {
+        failureLock.lock()
+        defer { failureLock.unlock() }
+        return lastFailure
+    }
+
+    /// Records the SPKI hashes the server presented on the most recent **pin-mismatch**
+    /// failure, so `VouchflowError.pinningFailure` can name what was actually served (vs.
+    /// what the SDK was told to pin). Empty when the last failure was not a pin mismatch —
+    /// a chain rejected at trust evaluation never reached pin comparison, and reporting
+    /// its hashes as "served pins" would send the reader hunting a stale-pin theory for
+    /// what is actually an expired certificate or a hostname mismatch.
+    var lastFailureServedSpkiSha256: [String] {
+        if case .pinMismatch(let served) = lastFailureRejection {
+            return served
+        }
+        return []
+    }
+
+    private func record(_ rejection: PinningRejection?) {
+        failureLock.lock()
+        lastFailure = rejection
+        failureLock.unlock()
+    }
+
+    // MARK: - URLSessionDelegate
 
     func urlSession(
         _ session: URLSession,
@@ -41,58 +81,121 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
             return
         }
 
-        // Placeholder pin handling
-        if config.hasTodoPlaceholderPins {
-            #if DEBUG
+        switch decision(forServerTrust: serverTrust) {
+        case .accept:
+            record(nil)
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+
+        case .acceptPlaceholderPinsInDebugBuild:
+            record(nil)
             VouchflowLogger.warn(
-                "[VouchflowSDK] Certificate pinning DISABLED — placeholder pins detected. " +
+                "[VouchflowSDK] Certificate PINNING disabled — placeholder pins detected. " +
+                "Standard TLS chain and hostname validation still applied. " +
                 "Configure real pins before shipping a production build."
             )
             completionHandler(.useCredential, URLCredential(trust: serverTrust))
-            #else
-            VouchflowLogger.error(
-                "[VouchflowSDK] Rejecting connection: placeholder pins in a release build. " +
-                "Set real leafCertificatePin and intermediateCertificatePin in VouchflowConfig."
-            )
+
+        case .reject(let rejection):
+            record(rejection)
+            VouchflowLogger.error(logMessage(for: rejection))
             completionHandler(.cancelAuthenticationChallenge, nil)
-            #endif
-            return
+        }
+    }
+
+    // MARK: - Decision
+
+    /// Validate first, then pin.
+    ///
+    /// Split out of the delegate callback (which needs a `URLAuthenticationChallenge` the
+    /// tests cannot synthesise) so `PinningDelegateTrustTests` can drive it with real
+    /// `SecTrust` objects built from fixture certificates.
+    func decision(forServerTrust serverTrust: SecTrust) -> PinningDecision {
+        guard let expectedHost = config.environment.baseURL.host else {
+            return .reject(.missingExpectedHost)
+        }
+        // Sequenced deliberately: `evaluateTrust` builds the chain on the trust object, so
+        // reading the served certificates afterwards reports the evaluated chain rather
+        // than only whatever the caller happened to seed it with.
+        let trustEvaluation = evaluateTrust(serverTrust, expectedHost: expectedHost)
+        let served = servedSPKIHashes(in: serverTrust)
+
+        return PinningPolicy.decide(
+            trustEvaluation: trustEvaluation,
+            servedSpkiSha256: served,
+            configuredPins: [config.leafCertificatePin, config.intermediateCertificatePin],
+            pinsArePlaceholders: config.hasTodoPlaceholderPins,
+            allowPlaceholderPinBypass: Self.allowsPlaceholderPinBypass
+        )
+    }
+
+    /// Debug builds tolerate placeholder pins. This bypasses **pin comparison only**;
+    /// `evaluateTrust` runs on every build configuration.
+    private static var allowsPlaceholderPinBypass: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// Runs the OS chain evaluation with an SSL policy bound to `expectedHost`.
+    ///
+    /// The hostname argument is what makes this more than a "chains to some trusted root"
+    /// check: without it, a certificate legitimately issued for an attacker's own domain
+    /// evaluates as perfectly valid.
+    private func evaluateTrust(_ serverTrust: SecTrust, expectedHost: String) -> TrustEvaluation {
+        let policy = SecPolicyCreateSSL(true, expectedHost as CFString)
+        let status = SecTrustSetPolicies(serverTrust, policy)
+        guard status == errSecSuccess else {
+            return .failed(reason: "could not apply SSL policy for \(expectedHost) (OSStatus \(status))")
         }
 
-        // Extract the certificate chain
+        var error: CFError?
+        guard SecTrustEvaluateWithError(serverTrust, &error) else {
+            let reason = error?.localizedDescription ?? "chain evaluation failed for \(expectedHost)"
+            return .failed(reason: reason)
+        }
+        return .passed
+    }
+
+    /// Base64 SHA-256 SPKI hash of every certificate in the presented chain, in chain order.
+    /// Certificates whose key type is unsupported are skipped (see `spkiSHA256Hash(for:)`).
+    private func servedSPKIHashes(in serverTrust: SecTrust) -> [String] {
         let certificateCount = SecTrustGetCertificateCount(serverTrust)
-        guard certificateCount > 0 else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
-            return
-        }
-
-        // Check each certificate in the chain against both configured pins. Collect the
-        // computed SPKI hashes as we go so the failure path can report them — this is
-        // what turns the previously-opaque pinningFailure into a self-diagnosing error.
         var served: [String] = []
-        for i in 0 ..< certificateCount {
-            guard let cert = SecTrustGetCertificateAtIndex(serverTrust, i),
+        for index in 0 ..< certificateCount {
+            guard let cert = SecTrustGetCertificateAtIndex(serverTrust, index),
                   let spkiHash = spkiSHA256Hash(for: cert) else {
                 continue
             }
             served.append(spkiHash)
-            if spkiHash == config.leafCertificatePin || spkiHash == config.intermediateCertificatePin {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                return
-            }
         }
+        return served
+    }
 
-        // No pin matched — stash the served chain for VouchflowAPIClient to pick up
-        // when it constructs the developer-facing VouchflowError.pinningFailure.
-        failureLock.lock()
-        lastFailureServedSpkiSha256 = served
-        failureLock.unlock()
-        VouchflowLogger.error(
-            "[VouchflowSDK] Certificate pinning failure. Configured: " +
-            "[\(config.leafCertificatePin), \(config.intermediateCertificatePin)]. " +
-            "Server presented: \(served)."
-        )
-        completionHandler(.cancelAuthenticationChallenge, nil)
+    private func logMessage(for rejection: PinningRejection) -> String {
+        switch rejection {
+        case .trustEvaluationFailed(let reason):
+            return "[VouchflowSDK] Rejecting connection: TLS chain failed standard validation " +
+                "for \(config.environment.baseURL.host ?? "the configured host") — \(reason). " +
+                "Certificate pins were not consulted; a chain that cannot be validated is " +
+                "not made trustworthy by matching a pin."
+
+        case .pinMismatch(let served):
+            return "[VouchflowSDK] Certificate pinning failure. The chain passed standard " +
+                "validation but matched no configured pin. Configured: " +
+                "[\(config.leafCertificatePin), \(config.intermediateCertificatePin)]. " +
+                "Server presented: \(served)."
+
+        case .placeholderPinsInReleaseBuild:
+            return "[VouchflowSDK] Rejecting connection: placeholder pins in a release build. " +
+                "Set real leafCertificatePin and intermediateCertificatePin in VouchflowConfig."
+
+        case .missingExpectedHost:
+            return "[VouchflowSDK] Rejecting connection: could not determine the expected " +
+                "hostname from the configured environment, so the TLS chain cannot be " +
+                "validated against it."
+        }
     }
 
     // MARK: - SPKI extraction

@@ -129,8 +129,14 @@ final class VouchflowAPIClient {
                 // principle fire for non-pinning reasons (host cancelled the task);
                 // we accept the false positive — every code path that reaches here on
                 // production traffic is a pinning challenge in practice.
+                let hostname = config.environment.baseURL.host ?? "api.vouchflow.dev"
+                if case .trustEvaluationFailed(let reason) = pinningDelegate.lastFailureRejection {
+                    // The chain never reached pin comparison — reporting it as a pin
+                    // mismatch would send the reader chasing a stale-pin theory.
+                    throw VouchflowError.trustEvaluationFailure(hostname: hostname, reason: reason)
+                }
                 throw VouchflowError.pinningFailure(
-                    hostname: config.environment.baseURL.host ?? "api.vouchflow.dev",
+                    hostname: hostname,
                     configuredPins: [config.leafCertificatePin, config.intermediateCertificatePin],
                     servedSpkiSha256: pinningDelegate.lastFailureServedSpkiSha256
                 )

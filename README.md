@@ -313,9 +313,21 @@ Sandbox verifications are free, isolated from the network graph, and do not affe
 
 ### Certificate pinning
 
-The SDK pins the Vouchflow TLS certificate by default. In debug builds, placeholder pin values disable pinning with a runtime warning. **In release builds, placeholder values cause all requests to fail** — replace them with the real pins from the Vouchflow dashboard before shipping.
+Every connection is validated in two steps, in this order:
 
-If a pinning failure is detected at runtime, the SDK throws `VouchflowError.pinningFailure`. This may indicate a MITM attack or a pin rotation — check the dashboard for the current pin values.
+1. **Standard TLS validation.** The SDK sets an SSL policy bound to the configured API host and runs the system chain evaluation (`SecTrustEvaluateWithError`). Expiry, revocation, chain-to-a-trusted-root and hostname are all checked by the OS. A chain that fails here is rejected outright.
+2. **Certificate pinning.** Only then are the configured SPKI pins compared. Pinning is an *additional* constraint on top of OS validation, never a replacement for it — a matching pin cannot rescue an invalid chain.
+
+The SDK pins the Vouchflow TLS certificate by default. In debug builds, placeholder pin values skip **step 2** with a runtime warning; step 1 still runs. **In release builds, placeholder values cause all requests to fail** — replace them with the real pins from the Vouchflow dashboard before shipping.
+
+Two distinct errors surface at runtime, and the difference tells you where to look:
+
+| Error | Meaning | Likely cause |
+|---|---|---|
+| `VouchflowError.trustEvaluationFailure(hostname:reason:)` | The chain failed standard validation and pins were never consulted. | Expired or revoked certificate, wrong device clock, an intercepting proxy presenting a certificate for a different host. `reason` carries the OS description. |
+| `VouchflowError.pinningFailure(hostname:configuredPins:servedSpkiSha256:)` | The chain is genuinely valid for the host, but no certificate in it matched a configured pin. | A stale pin after a Let's Encrypt rotation, or a MITM holding a chain your OS trusts. Diff `configuredPins` against `servedSpkiSha256`. |
+
+> **Upgrading from 2.4.x or earlier:** those versions accepted a connection as soon as any certificate in the presented chain matched a pin, without ever running step 1. If you pin at the intermediate (recommended, since it survives leaf rotation), upgrade to 2.5.0 or later — an intermediate pin without step 1 is satisfied by any certificate that CA has ever issued, for any domain.
 
 ## How it works
 

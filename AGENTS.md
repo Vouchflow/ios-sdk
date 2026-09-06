@@ -30,6 +30,19 @@ Do not reorder, and do not let the DEBUG placeholder-pin path skip trust evaluat
 `Tests/VouchflowSDKTests/PinningDelegateTrustTests.swift` proves it with real `SecTrust`
 objects; regenerating those fixtures means re-deriving each `…SPKI` constant from its own DER.
 
+## SPKI hashing: EC headers, RSA assembly
+
+`PinningDelegate` supports EC P-256/P-384 (fixed SPKI header + raw point) and RSA
+2048/3072/4096. RSA cannot reuse the header trick: Apple's RSA
+`SecKeyCopyExternalRepresentation` is `[4-byte BE length][modulus][4-byte BE length][exponent]`,
+not DER, so `rsaSPKI` strips the prefixes and re-wraps the INTEGERs with lengths computed
+from the actual bytes. The RSA roots Speakeasy pins are ISRG Root X1 (RSA 4096) and X2
+(EC P-384); their expected hashes and DER fixtures live in
+`Tests/VouchflowSDKTests/PinningRealRootCertificates.swift`, and every pin constant there
+is derived — never hand-written — with
+`openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`,
+then cross-checked by the test target's independent ASN.1 walk (`IndependentSPKI`).
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

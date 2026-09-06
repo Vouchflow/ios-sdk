@@ -219,8 +219,9 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     /// it is `[len][modulus][len][exponent]`, which is not DER and must be re-assembled into
     /// a full SPKI (see `rsaSPKI`). Earlier versions of this SDK hardcoded the P-256 header,
     /// which silently broke pinning for any chain whose intermediate ran on P-384 — exactly
-    /// what Let's Encrypt's current YE1 intermediate does. Branch on the key's actual
-    /// algorithm + size; never assume one shape covers all key types.
+    /// what Let's Encrypt's current YE1 intermediate does. Dispatch on the shape of the
+    /// external representation (see `spkiBytes`), never on the key-type attribute alone:
+    /// `kSecAttrKeyType` is not a stable discriminator across OS versions.
     ///
     /// Internal (not `private`) so the test target can hash fixture certificates directly
     /// via `@testable import` and compare against openssl-derived values; the end-to-end
@@ -250,14 +251,19 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
         return Data(digest).base64EncodedString()
     }
 
-    /// Full DER SPKI bytes for a key of the given type/size, from Apple's external
-    /// representation. EC keys are `header || raw point` (the raw form is already the
-    /// BIT STRING payload); RSA keys must be re-assembled (see `rsaSPKI`), because their
-    /// external representation is not DER at all. Returns nil for unsupported types/sizes,
-    /// which the caller logs and skips — a skip, never a crash.
+    /// Full DER SPKI bytes for a key of the given size, from Apple's external
+    /// representation. Dispatch is on the **shape of the external bytes**, not on the
+    /// reported key-type attribute: `kSecAttrKeyType` reads "42" (the raw algorithm id)
+    /// for RSA keys on the iOS 17.5 simulator, so comparing it against the documented
+    /// constant silently routed every RSA certificate to the unsupported-skip path.
+    /// The shapes are mutually exclusive: RSA external data starts with a 4-byte
+    /// big-endian length of 256–513, while an EC point starts with `0x04 || X`, whose
+    /// first four bytes read as a length of ~67 million. EC keys keep the unchanged
+    /// `header || raw point` path; RSA keys are re-assembled by `rsaSPKI`. Returns nil
+    /// for unsupported keys, which the caller logs and skips — a skip, never a crash.
     private func spkiBytes(forKeyType keyType: String, sizeBits: Int, externalKeyData: Data) -> Data? {
-        if keyType == Self.rsaKeyType {
-            return Self.rsaSPKI(sizeBits: sizeBits, externalKeyData: externalKeyData)
+        if let rsa = Self.rsaSPKI(sizeBits: sizeBits, externalKeyData: externalKeyData) {
+            return rsa
         }
         guard let header = spkiHeader(forKeyType: keyType, sizeBits: sizeBits) else { return nil }
         var spki = header
@@ -267,8 +273,9 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
 
     /// Returns the DER-encoded ASN.1 SPKI header that prefixes the raw public-key bytes
     /// produced by `SecKeyCopyExternalRepresentation` — EC types only (RSA keys are
-    /// handled by `rsaSPKI`, whose external representation needs re-assembly rather
-    /// than a fixed header). Returns nil for unsupported types and sizes.
+    /// dispatched earlier on their external representation's shape, by `spkiBytes`);
+    /// RSA external data needs re-assembly rather than a fixed header. Returns nil for
+    /// unsupported types and sizes.
     private func spkiHeader(forKeyType keyType: String, sizeBits: Int) -> Data? {
         let isEC = (keyType == (kSecAttrKeyTypeECSECPrimeRandom as String) ||
                     keyType == (kSecAttrKeyTypeEC as String))
@@ -295,8 +302,6 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     ])
 
     // MARK: - RSA SPKI assembly
-
-    private static let rsaKeyType = kSecAttrKeyTypeRSA as String
 
     /// DER AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1) with NULL parameters.
     /// Identical for every RSA key size.
@@ -334,8 +339,11 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
 
         let exponentField = externalKeyData.dropFirst(4 + modulusByteCount)
         let exponentByteCount = bigEndianUInt32(exponentField.prefix(4))
+        // Require the exponent field to account for every remaining byte, so the RSA
+        // structural signature is exact and nothing but genuine RSA external data can
+        // be re-assembled as one.
+        guard exponentByteCount > 0, exponentField.count == 4 + exponentByteCount else { return nil }
         let exponent = exponentField.dropFirst(4).prefix(exponentByteCount)
-        guard exponentByteCount > 0, exponent.count == exponentByteCount else { return nil }
 
         // RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
         // Build the INTEGERs first so the SEQUENCE length covers their full encodings

@@ -36,7 +36,10 @@ objects; regenerating those fixtures means re-deriving each `…SPKI` constant f
 2048/3072/4096. RSA cannot reuse the header trick: Apple's RSA
 `SecKeyCopyExternalRepresentation` is `[4-byte BE length][modulus][4-byte BE length][exponent]`,
 not DER, so `rsaSPKI` strips the prefixes and re-wraps the INTEGERs with lengths computed
-from the actual bytes. The RSA roots Speakeasy pins are ISRG Root X1 (RSA 4096) and X2
+from the actual bytes. Dispatch on the **shape** of those external bytes, never on the
+`kSecAttrKeyType` attribute string: the attribute is not a stable discriminator — the iOS 17.5
+simulator reports RSA keys as the bare algorithm id `"42"` instead of the constant string, which
+once silently routed every RSA certificate to the unsupported-skip path. The RSA roots Speakeasy pins are ISRG Root X1 (RSA 4096) and X2
 (EC P-384); their expected hashes and DER fixtures live in
 `Tests/VouchflowSDKTests/PinningRealRootCertificates.swift`, and every pin constant there
 is derived — never hand-written — with

@@ -213,12 +213,14 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     ///
     ///     openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
     ///
-    /// Implementation note: `SecKeyCopyExternalRepresentation` returns only the raw key
-    /// material (for EC: the uncompressed point `04 || X || Y`), so we have to prepend the
-    /// matching SPKI ASN.1 header before hashing. Earlier versions of this SDK hardcoded the
-    /// P-256 header, which silently broke pinning for any chain whose intermediate ran on
-    /// P-384 — exactly what Let's Encrypt's current YE1 intermediate does. Branch on the
-    /// key's actual algorithm + size and use the right header.
+    /// Implementation note: `SecKeyCopyExternalRepresentation` returns only raw key
+    /// material, and its shape depends on the algorithm: for EC it is the uncompressed point
+    /// `04 || X || Y` (complete except for the SPKI header — see `spkiBytes`), while for RSA
+    /// it is `[len][modulus][len][exponent]`, which is not DER and must be re-assembled into
+    /// a full SPKI (see `rsaSPKI`). Earlier versions of this SDK hardcoded the P-256 header,
+    /// which silently broke pinning for any chain whose intermediate ran on P-384 — exactly
+    /// what Let's Encrypt's current YE1 intermediate does. Branch on the key's actual
+    /// algorithm + size; never assume one shape covers all key types.
     ///
     /// Internal (not `private`) so the test target can hash fixture certificates directly
     /// via `@testable import` and compare against openssl-derived values; the end-to-end

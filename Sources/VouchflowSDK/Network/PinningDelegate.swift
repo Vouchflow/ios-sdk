@@ -346,9 +346,9 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     /// - The documented non-DER form
     ///   `[4-byte big-endian modulus byte count][modulus][4-byte big-endian exponent
     ///   byte count][exponent]`: the length prefixes are stripped and the INTEGER
-    ///   payloads re-wrapped with proper DER lengths (the modulus blob already carries
-    ///   the leading 0x00 DER requires when the high bit is set, so it is a valid
-    ///   INTEGER payload as-is).
+    ///   payloads re-wrapped with proper DER lengths after canonicalization (either
+    ///   platform convention — modulus with or without the sign-preserving 0x00 —
+    ///   converges to the same minimal DER encoding; see `spkiFromRSAPublicKey`).
     /// - DER beginning `0x30`: either a full SubjectPublicKeyInfo (rsaEncryption
     ///   AlgorithmIdentifier, BIT STRING payload = RSAPublicKey), returned as-is once
     ///   validated, or a bare RSAPublicKey SEQUENCE, re-wrapped in the rsaEncryption

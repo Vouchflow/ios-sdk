@@ -40,7 +40,9 @@ keys as the bare algorithm id `"42"` instead of the constant string, so comparin
 unsupported-skip path (`isRSAKeyType` accepts the constant, `"42"`, and `"RSA"`). RSA
 cannot reuse the header trick: Apple's RSA `SecKeyCopyExternalRepresentation` is not DER —
 the documented form is `[4-byte BE length][modulus][4-byte BE length][exponent]`, which
-`rsaSPKI` re-wraps into INTEGERs with lengths computed from the actual bytes. Because that
+`rsaSPKI` re-wraps into canonical INTEGERs (payloads normalized to the minimal DER
+encoding, so either modulus convention — with or without a sign-preserving 0x00 — hashes
+identically) with lengths computed from the actual bytes. Because that
 layout is platform-documented but not proven on every target, `rsaSPKI` also accepts
 already-DER data starting `0x30` (full SubjectPublicKeyInfo returned as-is after
 validation, or a bare RSAPublicKey re-wrapped canonically), and rejects anything that does

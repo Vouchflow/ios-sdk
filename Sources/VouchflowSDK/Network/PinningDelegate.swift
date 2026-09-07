@@ -371,8 +371,9 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
         guard bytes.count > 8 else { return nil }
 
         let modulusByteCount = bigEndianUInt32(bytes.prefix(4))
-        // Apple prepends a 0x00 exactly when the modulus's high bit is set, so both
-        // sizeBits/8 and sizeBits/8 + 1 bytes are legitimate for a sizeBits-bit key.
+        // Both sizeBits/8 and sizeBits/8 + 1 bytes are accepted for the modulus:
+        // platforms may or may not include a sign-preserving leading 0x00, and
+        // spkiFromRSAPublicKey normalizes either convention to the canonical encoding.
         guard modulusByteCount == expectedModulusBytes || modulusByteCount == expectedModulusBytes + 1 else {
             return nil
         }
@@ -406,6 +407,7 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
            bitString.tag == 0x03,
            bitString.content.first == 0x00,
            algorithm.totalLength + bitString.totalLength == outer.content.count,
+           outer.totalLength == bytes.count,
            let publicKey = derTLV(Array(bitString.content.dropFirst(1))),
            publicKey.tag == 0x30,
            rsaIntegerPayloads(publicKey.content, sizeBits: sizeBits) != nil {
@@ -440,12 +442,17 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     }
 
     /// Canonical DER SubjectPublicKeyInfo for an RSA key from its INTEGER payloads.
-    /// The INTEGERs are built first so the SEQUENCE lengths cover their full encodings
-    /// (a 257-byte RSA modulus needs a long-form DER length — getting this wrong shifts
-    /// every byte after the header and breaks the hash).
+    /// Each payload is normalized first — leading 0x00s stripped, then a 0x00 prepended
+    /// when the first byte's high bit is set — so either platform convention (modulus
+    /// with or without the sign-preserving 0x00) converges to the same minimal DER
+    /// encoding as the openssl pipeline. The INTEGERs are built second so the SEQUENCE
+    /// lengths cover their full encodings (a 257-byte RSA modulus needs a long-form DER
+    /// length — getting this wrong shifts every byte after the header and breaks the hash).
     private static func spkiFromRSAPublicKey(modulus: [UInt8], exponent: [UInt8]) -> Data {
-        let modulusInteger = Data([0x02]) + derLength(modulus.count) + Data(modulus)
-        let exponentInteger = Data([0x02]) + derLength(exponent.count) + Data(exponent)
+        let canonicalModulus = canonicalRSAInteger(modulus)
+        let canonicalExponent = canonicalRSAInteger(exponent)
+        let modulusInteger = Data([0x02]) + derLength(canonicalModulus.count) + Data(canonicalModulus)
+        let exponentInteger = Data([0x02]) + derLength(canonicalExponent.count) + Data(canonicalExponent)
         var rsaPublicKey = Data([0x30])
         rsaPublicKey.append(contentsOf: derLength(modulusInteger.count + exponentInteger.count))
         rsaPublicKey.append(modulusInteger)
@@ -461,6 +468,20 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
         spki.append(contentsOf: derLength(body.count))
         spki.append(body)
         return spki
+    }
+
+    /// Minimal signed-INTEGER payload for `value`: leading 0x00s stripped (a single
+    /// 0x00 remains if the payload is otherwise empty), then a 0x00 prepended when the
+    /// first byte's high bit is set.
+    private static func canonicalRSAInteger(_ value: [UInt8]) -> [UInt8] {
+        var payload = value
+        while payload.count > 1, payload.first == 0x00 {
+            payload.removeFirst()
+        }
+        if let first = payload.first, first & 0x80 != 0 {
+            payload.insert(0x00, at: 0)
+        }
+        return payload
     }
 
     /// One DER TLV at the start of `bytes`: its tag, content, and total encoded length

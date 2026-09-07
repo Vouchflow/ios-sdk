@@ -54,6 +54,13 @@ final class VerificationManager {
         self.apiClient = apiClient
     }
 
+    /// Clear only the session that completed; a newer verification may have started in flight.
+    func completeFallbackSession(_ sessionId: String) {
+        guard pendingFallbackSessionId == sessionId else { return }
+        pendingFallbackSessionId = nil
+        sessionCache.clear()
+    }
+
     // MARK: - Reset
 
     /// Clears all local enrollment data. Called by `Vouchflow.reset()`.

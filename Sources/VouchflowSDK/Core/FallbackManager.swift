@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-/// Manages the email OTP fallback path.
+/// Manages the email OTP and reviewer-code fallback paths.
 ///
 /// Called by the developer after catching `biometricFailed` or `biometricCancelled`
 /// from `verify()`. The developer decides whether to offer fallback — the SDK never
@@ -56,18 +56,34 @@ final class FallbackManager {
         let request = FallbackCompleteRequest(otp: otp, deviceToken: deviceToken)
         let response = try await apiClient.completeFallback(fallbackSessionId: sessionId, request)
 
-        return FallbackVerificationResult(
+        return mapResult(response)
+    }
+
+    /// Completes fallback in one request, without email or OTP delivery.
+    func requestFallback(sessionId: String, reviewerCode: String) async throws -> FallbackVerificationResult {
+        guard let deviceToken = try keychainManager.read(key: KeychainKey.deviceToken) else {
+            throw VouchflowError.enrollmentFailed(underlying: nil)
+        }
+        let request = FallbackRequest.reviewerCode(deviceToken: deviceToken, code: reviewerCode)
+        let response = try await apiClient.acceptReviewerCode(sessionId: sessionId, request)
+        return mapResult(response)
+    }
+
+    private func mapResult(_ response: FallbackCompleteResponse) -> FallbackVerificationResult {
+        FallbackVerificationResult(
             verified: response.verified,
             confidence: Confidence(rawValue: response.confidence) ?? .low,
             sessionState: response.sessionState,
-            fallbackSignals: FallbackSignals(
-                ipConsistent: response.fallbackSignals.ipConsistent,
-                disposableEmailDomain: response.fallbackSignals.disposableEmailDomain,
-                deviceHasPriorVerifications: response.fallbackSignals.deviceHasPriorVerifications,
-                emailDomainAgeDays: response.fallbackSignals.emailDomainAgeDays,
-                otpAttempts: response.fallbackSignals.otpAttempts,
-                timeToCompleteSeconds: response.fallbackSignals.timeToCompleteSeconds
-            )
+            fallbackSignals: response.fallbackSignals.map { signals in
+                FallbackSignals(
+                    ipConsistent: signals.ipConsistent,
+                    disposableEmailDomain: signals.disposableEmailDomain,
+                    deviceHasPriorVerifications: signals.deviceHasPriorVerifications,
+                    emailDomainAgeDays: signals.emailDomainAgeDays,
+                    otpAttempts: signals.otpAttempts,
+                    timeToCompleteSeconds: signals.timeToCompleteSeconds
+                )
+            }
         )
     }
 

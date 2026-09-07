@@ -55,6 +55,10 @@ is derived — never hand-written — with
 `openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`,
 then cross-checked by the test target's independent ASN.1 walk (`IndependentSPKI`).
 
+All API calls use `Sources/VouchflowSDK/Network/VouchflowAPIClient.swift`, which constructs
+the pinned session. Keep fallback methods on that client; wire models are in
+`Network/Models/FallbackModels.swift`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

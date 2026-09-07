@@ -73,16 +73,31 @@ public struct VouchflowResult {
     public let context: VerificationContext
 }
 
-/// The result of a successful fallback (email OTP) verification.
+/// The result of a completed email OTP or reviewer-code fallback verification.
 public struct FallbackVerificationResult {
-    /// Whether the OTP verification was successful.
+    /// Whether fallback verification was successful.
     public let verified: Bool
-    /// Always `.low` for fallback — email OTP proves inbox access, not device presence.
+    /// Always `.low` for fallback; neither method proves hardware presence.
     public let confidence: Confidence
     /// Session state at completion.
     public let sessionState: String
-    /// Signals available from fallback (no device cryptography involved).
+    /// Email OTP signals. For reviewer codes these are neutral placeholders;
+    /// check `hasFallbackSignals` before interpreting them.
     public let fallbackSignals: FallbackSignals
+    /// Whether the server supplied email OTP signals. False for reviewer codes.
+    public let hasFallbackSignals: Bool
+
+    init(verified: Bool, confidence: Confidence, sessionState: String, fallbackSignals: FallbackSignals?) {
+        self.verified = verified
+        self.confidence = confidence
+        self.sessionState = sessionState
+        self.hasFallbackSignals = fallbackSignals != nil
+        self.fallbackSignals = fallbackSignals ?? FallbackSignals(
+            ipConsistent: false, disposableEmailDomain: false,
+            deviceHasPriorVerifications: false, emailDomainAgeDays: nil,
+            otpAttempts: 0, timeToCompleteSeconds: 0
+        )
+    }
 }
 
 /// Signals returned when a fallback (email OTP) verification completes.

@@ -159,6 +159,27 @@ public final class Vouchflow {
         )
     }
 
+    /// Completes the most recently initiated verification using a server-issued reviewer code.
+    /// Call after `verify` leaves a pending fallback session. No email is collected and
+    /// no OTP or `/complete` request follows. Submit within the session's 60-second expiry.
+    ///
+    /// - Parameter reviewerCode: The 32 lowercase hexadecimal characters issued by your server.
+    /// - Returns: The same low-confidence terminal result as email OTP completion.
+    /// - Throws: `noActiveSession`, `reviewerCodeRejected`, or the existing transport errors.
+    public func requestFallback(reviewerCode: String) async throws -> FallbackVerificationResult {
+        guard let manager = fallbackManager, let verificationManager else {
+            throw VouchflowError.notConfigured
+        }
+        guard let sessionId = verificationManager.pendingFallbackSessionId else {
+            throw VouchflowError.noActiveSession
+        }
+        let result = try await manager.requestFallback(sessionId: sessionId, reviewerCode: reviewerCode)
+        if result.sessionState == "FALLBACK_COMPLETE" {
+            verificationManager.completeFallbackSession(sessionId)
+        }
+        return result
+    }
+
     /// Submits the OTP entered by the user to complete a fallback verification.
     ///
     /// - Parameters:

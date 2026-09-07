@@ -167,9 +167,9 @@ final class FallbackCompleteResponseDecodingTests: XCTestCase {
         let response = try decoder.decode(FallbackCompleteResponse.self, from: json)
 
         XCTAssertTrue(response.verified)
-        XCTAssertNil(response.fallbackSignals.emailDomainAgeDays)
-        XCTAssertEqual(response.fallbackSignals.otpAttempts, 1)
-        XCTAssertEqual(response.fallbackSignals.timeToCompleteSeconds, 42)
+        XCTAssertNil(response.fallbackSignals?.emailDomainAgeDays)
+        XCTAssertEqual(response.fallbackSignals?.otpAttempts, 1)
+        XCTAssertEqual(response.fallbackSignals?.timeToCompleteSeconds, 42)
     }
 
     func test_emailDomainAgeDays_decodesInteger() throws {
@@ -191,7 +191,7 @@ final class FallbackCompleteResponseDecodingTests: XCTestCase {
 
         let response = try decoder.decode(FallbackCompleteResponse.self, from: json)
 
-        XCTAssertEqual(response.fallbackSignals.emailDomainAgeDays, 3650)
+        XCTAssertEqual(response.fallbackSignals?.emailDomainAgeDays, 3650)
     }
 }
 

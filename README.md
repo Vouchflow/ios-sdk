@@ -176,6 +176,44 @@ do {
 }
 ```
 
+## Reviewer-code fallback
+
+After `verify(context:)` has initiated a session and left it pending for fallback,
+submit a server-issued reviewer code within the session's 60-second lifetime:
+
+```swift
+do {
+    let result = try await Vouchflow.shared.requestFallback(reviewerCode: reviewerCode)
+    // result.verified == true, result.confidence == .low
+    // result.sessionState == "FALLBACK_COMPLETE"
+} catch VouchflowError.reviewerCodeRejected {
+    showError("That code didn't work.")
+} catch VouchflowError.networkUnavailable {
+    showError("Unable to connect.")
+}
+```
+
+The code is 32 lowercase hexadecimal characters. The SDK sends only `method`,
+`reviewer_code`, and its stored `device_token` to `POST /v1/verify/:session_id/fallback`
+using the same pinned client as email fallback. No email, email hash, OTP, or
+subsequent `/complete` request is involved. Success clears that pending session.
+Codes grant low confidence and cannot override application confidence policy.
+
+Invalid, expired, revoked, exhausted, or wrongly bound codes (and incompatible
+sessions/devices) all surface as `reviewerCodeRejected`. Malformed input retains
+`serverError` with `invalid_request`; authentication, rate-limit, network, and
+pinning errors retain the SDK's existing mapping. If a response is lost, have your
+app's server consult `GET /v1/verify/:session_id` with its read key before retrying;
+acceptance is terminal and cannot be replayed.
+
+The result uses `FallbackVerificationResult`. Reviewer responses have
+`hasFallbackSignals == false`; the existing `fallbackSignals` property contains
+neutral placeholders (false, nil, and zero) for source compatibility. These are
+not measured email/OTP signals. Email OTP results retain their original signals.
+Mint and revoke codes only on your server with an admin key; never embed that key
+in an app. Production server support requires a **server-v* tag**; a merged server
+PR alone does not activate this endpoint branch.
+
 ## Email fallback
 
 When biometric verification fails or is unavailable, you can offer email OTP as a fallback. The SDK hashes the email with SHA-256 before transmission for rate-limiting purposes; it is never stored by the server.
@@ -242,6 +280,7 @@ Pass the most specific reason that applies:
 | `cachedDeviceToken` | Reads enrolled device token from Keychain. No network. Returns `nil` if not enrolled. |
 | `verify(context:minimumConfidence:)` | Full verification: enrollment, biometric, challenge signing. |
 | `signPayload(_:context:minimumConfidence:)` | Signs a canonical payload with biometric confirmation and returns a Vouchflow JWS. |
+| `requestFallback(reviewerCode:)` | Completes a pending verification using a reviewer code, without email. |
 | `requestFallback(email:reason:)` | Initiates email OTP fallback after a biometric error. |
 | `submitFallbackOTP(sessionId:otp:)` | Submits the OTP to complete fallback verification. |
 | `reset()` | Clears all local enrollment data. Next `verify()` re-enrolls. |
@@ -277,14 +316,15 @@ Returned by `verify(context:minimumConfidence:)`.
 
 ### `FallbackVerificationResult`
 
-Returned by `submitFallbackOTP(sessionId:otp:)`.
+Returned by `submitFallbackOTP(sessionId:otp:)` or `requestFallback(reviewerCode:)`.
 
 | Property | Type | Description |
 |---|---|---|
 | `verified` | `Bool` | Whether the OTP was correct |
 | `confidence` | `Confidence` | Always `.low` — email OTP proves inbox access, not device presence |
 | `sessionState` | `String` | Final session state |
-| `fallbackSignals` | `FallbackSignals` | Signals available from the fallback flow |
+| `fallbackSignals` | `FallbackSignals` | Email OTP signals; placeholders when `hasFallbackSignals` is false |
+| `hasFallbackSignals` | `Bool` | Whether the server supplied email OTP signals |
 
 ## Configuration reference
 
@@ -349,8 +389,12 @@ Two distinct errors surface at runtime, and the difference tells you where to lo
 
 ## Releases
 
-Releases are tag-driven. Update `VERSION` in the release PR, merge it to `main`, then have a human push the matching `vX.Y.Z` tag. The release job rejects a tag whose version does not exactly match `VERSION`; pushes to `main` build and test only, and never bump or publish a version.
-
-The tag run builds the XCFramework and creates a GitHub release with auto-generated notes and a prebuilt `VouchflowSDK-X.Y.Z.zip` attached.
+Releases are explicitly tag-driven; pushes to `main` run checks without bumping versions.
+Update `VERSION` in the release PR, merge through the normal PR flow, then have the release
+owner push the matching `vX.Y.Z` tag. The release job in
+[`.github/workflows/ios.yml`](.github/workflows/ios.yml) requires the tag version to match
+`VERSION`, runs after tests, builds the XCFramework, and publishes a GitHub release with
+auto-generated notes and a prebuilt `VouchflowSDK-X.Y.Z.zip` attached. A merge alone does not
+release the SDK.
 
 SPM consumers pin to a version tag and get source distribution automatically — no additional steps required. The attached XCFramework zip is for integrators who prefer binary distribution.

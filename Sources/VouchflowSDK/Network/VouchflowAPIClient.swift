@@ -7,16 +7,28 @@ import Foundation
 final class VouchflowAPIClient {
 
     private let config: VouchflowConfig
-    private let session: URLSession
+    // Internal read-only access lets transport tests assert pinned-session reuse.
+    let session: URLSession
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
     private static let apiVersion = "2026-04-01"
 
-    init(config: VouchflowConfig) {
+    /// Held strong so we can read `lastFailureServedSpkiSha256` when a pinning challenge
+    /// rejects a connection — URLSession only keeps a weak reference to the delegate.
+    private let pinningDelegate: PinningDelegate
+
+    // Tests inject URLProtocol through configuration; the pinning delegate is always installed.
+    init(config: VouchflowConfig, sessionConfiguration: URLSessionConfiguration = .ephemeral) {
         self.config = config
 
-        self.session = URLSession(configuration: .ephemeral)
+        let pinningDelegate = PinningDelegate(config: config)
+        self.pinningDelegate = pinningDelegate
+        self.session = URLSession(
+            configuration: sessionConfiguration,
+            delegate: pinningDelegate,
+            delegateQueue: nil
+        )
 
         self.encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -82,6 +94,13 @@ final class VouchflowAPIClient {
         sessionId: String,
         _ request: FallbackRequest
     ) async throws -> FallbackResponse {
+        try await perform(method: "POST", path: "/v1/verify/\(sessionId)/fallback", body: request)
+    }
+
+    func acceptReviewerCode(
+        sessionId: String,
+        _ request: FallbackRequest
+    ) async throws -> FallbackCompleteResponse {
         try await perform(method: "POST", path: "/v1/verify/\(sessionId)/fallback", body: request)
     }
 
@@ -176,6 +195,10 @@ final class VouchflowAPIClient {
             let errorDetail: APIErrorDetail? = try? decoder.decode(APIErrorResponse.self, from: data).error
             let code = errorDetail?.code
             let message = errorDetail?.message
+
+            if http.statusCode == 422 && code == "reviewer_code_rejected" {
+                throw VouchflowError.reviewerCodeRejected
+            }
 
             if code == "verification_impossible" {
                 throw VouchflowError.minimumConfidenceUnmet

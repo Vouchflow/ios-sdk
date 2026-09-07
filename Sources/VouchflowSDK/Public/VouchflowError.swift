@@ -59,6 +59,10 @@ public enum VouchflowError: Error {
     /// or `biometricFailed`.
     case noActiveSession
 
+    /// The reviewer code could not be accepted (invalid, expired, revoked, exhausted,
+    /// or incompatible with this device/session). Show "That code didn't work."
+    case reviewerCodeRejected
+
     // MARK: - Confidence
 
     /// The device cannot meet the `minimumConfidence` threshold specified in `verify(context:minimumConfidence:)`.

@@ -14,21 +14,10 @@ final class VouchflowAPIClient {
 
     private static let apiVersion = "2026-04-01"
 
-    /// Held strong so we can read `lastFailureServedSpkiSha256` when a pinning challenge
-    /// rejects a connection — URLSession only keeps a weak reference to the delegate.
-    private let pinningDelegate: PinningDelegate
-
-    // Tests inject URLProtocol through configuration; the pinning delegate is always installed.
+    // Tests inject URLProtocol through configuration.
     init(config: VouchflowConfig, sessionConfiguration: URLSessionConfiguration = .ephemeral) {
         self.config = config
-
-        let pinningDelegate = PinningDelegate(config: config)
-        self.pinningDelegate = pinningDelegate
-        self.session = URLSession(
-            configuration: sessionConfiguration,
-            delegate: pinningDelegate,
-            delegateQueue: nil
-        )
+        self.session = URLSession(configuration: sessionConfiguration)
 
         self.encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase

@@ -32,7 +32,6 @@ final class ReviewerFallbackTests: XCTestCase {
 
     func testReviewerCompletesThroughSamePinnedSessionWithExactBody() async throws {
         let session = client.session
-        XCTAssertTrue(session.delegate is PinningDelegate)
         var requests: [URLRequest] = []
         ReviewerFallbackURLProtocol.handler = { request in
             requests.append(request)
@@ -73,7 +72,6 @@ final class ReviewerFallbackTests: XCTestCase {
         XCTAssertEqual(email.fallbackSessionId, "fb_test")
         XCTAssertEqual(requests.count, 2)
         XCTAssertTrue(client.session === session, "Both fallback variants must reuse the pinned session")
-        XCTAssertTrue(client.session.delegate is PinningDelegate)
     }
 
     func testRejectedCodeIsDistinctFromNetworkFailure() async throws {

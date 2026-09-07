@@ -35,8 +35,8 @@ public enum VouchflowError: Error {
     case biometricUnavailable
 
     /// The user explicitly cancelled the biometric prompt.
-    /// Provide a retry button. Call `requestFallback(email:reason:)` if the user
-    /// opts into email fallback instead.
+    /// Provide a retry button. If the user opts into fallback instead, call the
+    /// matching `requestFallback` overload for email OTP or a reviewer code.
     ///
     /// - Parameter sessionId: The verification session retained internally for fallback.
     case biometricCancelled(sessionId: String)

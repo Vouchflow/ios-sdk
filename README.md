@@ -320,8 +320,8 @@ Returned by `submitFallbackOTP(sessionId:otp:)` or `requestFallback(reviewerCode
 
 | Property | Type | Description |
 |---|---|---|
-| `verified` | `Bool` | Whether the OTP was correct |
-| `confidence` | `Confidence` | Always `.low` — email OTP proves inbox access, not device presence |
+| `verified` | `Bool` | Whether fallback verification succeeded |
+| `confidence` | `Confidence` | Always `.low` — neither fallback method proves hardware presence |
 | `sessionState` | `String` | Final session state |
 | `fallbackSignals` | `FallbackSignals` | Email OTP signals; placeholders when `hasFallbackSignals` is false |
 | `hasFallbackSignals` | `Bool` | Whether the server supplied email OTP signals |

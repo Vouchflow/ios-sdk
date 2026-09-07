@@ -213,13 +213,24 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
     ///
     ///     openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
     ///
-    /// Implementation note: `SecKeyCopyExternalRepresentation` returns only the raw key
-    /// material (for EC: the uncompressed point `04 || X || Y`), so we have to prepend the
-    /// matching SPKI ASN.1 header before hashing. Earlier versions of this SDK hardcoded the
-    /// P-256 header, which silently broke pinning for any chain whose intermediate ran on
-    /// P-384 — exactly what Let's Encrypt's current YE1 intermediate does. Branch on the
-    /// key's actual algorithm + size and use the right header.
-    private func spkiSHA256Hash(for certificate: SecCertificate) -> String? {
+    /// Implementation note: `SecKeyCopyExternalRepresentation` returns only raw key
+    /// material, and its shape depends on the algorithm: for EC it is the uncompressed point
+    /// `04 || X || Y` (complete except for the SPKI header — see `spkiBytes`), while for RSA
+    /// it is not DER — the documented form is `[len][modulus][len][exponent]`, which must be
+    /// re-assembled into a full SPKI (see `rsaSPKI`), and `rsaSPKI` additionally accepts
+    /// already-DER RSA data in case a platform reports that form instead. Dispatch is on
+    /// the key-type attribute, but every form that attribute is observed to take is
+    /// accepted (see `isRSAKeyType`): `kSecAttrKeyType` is not a stable discriminator —
+    /// it has been seen as the bare algorithm id `"42"` for RSA keys, so comparing it
+    /// against the documented constant alone silently routed every RSA certificate to the
+    /// unsupported-skip path. Earlier versions of this SDK hardcoded the P-256 header,
+    /// which silently broke pinning for any chain whose intermediate ran on P-384 —
+    /// exactly what Let's Encrypt's current YE1 intermediate does.
+    ///
+    /// Internal (not `private`) so the test target can hash fixture certificates directly
+    /// via `@testable import` and compare against openssl-derived values; the end-to-end
+    /// `decision(forServerTrust:)` tests can only assert accept/reject, not the exact hash.
+    func spkiSHA256Hash(for certificate: SecCertificate) -> String? {
         guard let publicKey = SecCertificateCopyKey(certificate),
               let attributes = SecKeyCopyAttributes(publicKey) as? [String: Any],
               let keyType = attributes[kSecAttrKeyType as String] as? String,
@@ -228,17 +239,20 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
             return nil
         }
 
-        guard let spkiHeader = spkiHeader(forKeyType: keyType, sizeBits: keySizeBits) else {
+        guard let spki = spkiBytes(forKeyType: keyType, sizeBits: keySizeBits, externalKeyData: publicKeyData) else {
+            // Include the external representation's shape so a report discriminates
+            // between the candidate RSA layouts without further test machinery.
+            let externalHex = publicKeyData.prefix(8)
+                .map { String(format: "%02x", $0) }
+                .joined(separator: " ")
             VouchflowLogger.error(
                 "[VouchflowSDK] Unsupported certificate key for pinning: type=\(keyType) size=\(keySizeBits). " +
-                "Vouchflow's chain currently uses EC P-256 (leaf) + EC P-384 (intermediate); " +
-                "if you see this, the server chain changed and this SDK needs an update."
+                "External representation: \(publicKeyData.count) bytes starting [\(externalHex)]. " +
+                "Supported: EC P-256/P-384 and RSA 2048/3072/4096. " +
+                "If you see this, the server chain changed and this SDK needs an update."
             )
             return nil
         }
-
-        var spki = spkiHeader
-        spki.append(publicKeyData)
 
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         spki.withUnsafeBytes {
@@ -247,8 +261,39 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
         return Data(digest).base64EncodedString()
     }
 
+    /// Full DER SPKI bytes for a key of the given size, from Apple's external
+    /// representation. Dispatch is on the **key-type attribute**, accepting every form
+    /// that attribute is observed to take for RSA keys (see `isRSAKeyType`): comparing
+    /// against the documented constant alone silently routed every RSA certificate to
+    /// the unsupported-skip path on platforms where `kSecAttrKeyType` reads "42" (the
+    /// raw algorithm id). The RSA external byte layout is itself not assumed — `rsaSPKI`
+    /// accepts both candidate layouts and rejects anything that does not actually encode
+    /// an RSA key of the given size. EC keys keep the unchanged `header || raw point`
+    /// path via `spkiHeader`, which rejects every RSA key-type form, so no EC key can
+    /// reach the RSA path. Returns nil for unsupported keys, which the caller logs
+    /// (including the external bytes' shape) and skips — a skip, never a crash.
+    private func spkiBytes(forKeyType keyType: String, sizeBits: Int, externalKeyData: Data) -> Data? {
+        if Self.isRSAKeyType(keyType) {
+            return Self.rsaSPKI(sizeBits: sizeBits, externalKeyData: externalKeyData)
+        }
+        guard let header = spkiHeader(forKeyType: keyType, sizeBits: sizeBits) else { return nil }
+        var spki = header
+        spki.append(externalKeyData)
+        return spki
+    }
+
+    /// Every form `kSecAttrKeyType` is observed to take for RSA keys: the documented
+    /// constant as a String, the bare algorithm id `"42"`, and the algorithm's common
+    /// name `"RSA"`. EC keys are matched separately by `spkiHeader`.
+    private static func isRSAKeyType(_ keyType: String) -> Bool {
+        keyType == (kSecAttrKeyTypeRSA as String) || keyType == "42" || keyType == "RSA"
+    }
+
     /// Returns the DER-encoded ASN.1 SPKI header that prefixes the raw public-key bytes
-    /// produced by `SecKeyCopyExternalRepresentation`. Returns nil for unsupported types.
+    /// produced by `SecKeyCopyExternalRepresentation` — EC types only (RSA keys are
+    /// dispatched earlier on the key-type attribute, by `spkiBytes`, and take the
+    /// re-assembly path in `rsaSPKI` rather than a fixed header). Returns nil for
+    /// unsupported types and sizes.
     private func spkiHeader(forKeyType keyType: String, sizeBits: Int) -> Data? {
         let isEC = (keyType == (kSecAttrKeyTypeECSECPrimeRandom as String) ||
                     keyType == (kSecAttrKeyTypeEC as String))
@@ -273,6 +318,215 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate {
         0x03, 0x42,                              //   BIT STRING, 66 bytes
         0x00,                                    //     no unused bits
     ])
+
+    // MARK: - RSA SPKI assembly
+
+    /// DER AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1) with NULL parameters.
+    /// Identical for every RSA key size.
+    private static let rsaEncryptionAlgorithmIdentifier = Data([
+        0x30, 0x0D,                              // SEQUENCE, 13 bytes
+        0x06, 0x09,                              //   OID, 9 bytes
+        0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01, //   rsaEncryption
+        0x05, 0x00,                              //   NULL
+    ])
+
+    /// The AlgorithmIdentifier's content — its SEQUENCE wrapper stripped — used to
+    /// recognize an rsaEncryption AlgorithmIdentifier while parsing DER.
+    private static let rsaEncryptionAlgorithmIdentifierContent = Data([
+        0x06, 0x09,                              //   OID, 9 bytes
+        0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01, //   rsaEncryption
+        0x05, 0x00,                              //   NULL
+    ])
+
+    /// Assembles the full DER SubjectPublicKeyInfo for an RSA public key of a supported
+    /// size. Two external-representation layouts are accepted, and whichever is taken
+    /// must actually encode an RSA key of `sizeBits`, so a misrouted EC point or
+    /// unrelated DER can never be hashed as an RSA SPKI:
+    ///
+    /// - The documented non-DER form
+    ///   `[4-byte big-endian modulus byte count][modulus][4-byte big-endian exponent
+    ///   byte count][exponent]`: the length prefixes are stripped and the INTEGER
+    ///   payloads re-wrapped with proper DER lengths after canonicalization (either
+    ///   platform convention — modulus with or without the sign-preserving 0x00 —
+    ///   converges to the same minimal DER encoding; see `spkiFromRSAPublicKey`).
+    /// - DER beginning `0x30`: either a full SubjectPublicKeyInfo (rsaEncryption
+    ///   AlgorithmIdentifier, BIT STRING payload = RSAPublicKey), returned as-is once
+    ///   validated, or a bare RSAPublicKey SEQUENCE, re-wrapped in the rsaEncryption
+    ///   AlgorithmIdentifier + BIT STRING so the hash is identical either way.
+    ///
+    /// Supported sizes: 2048, 3072, 4096 — the sizes of real deployment roots (ISRG Root X1
+    /// is RSA 4096). Anything else returns nil and is skipped with a log, never a crash.
+    private static func rsaSPKI(sizeBits: Int, externalKeyData: Data) -> Data? {
+        guard [2048, 3072, 4096].contains(sizeBits) else { return nil }
+        let bytes = [UInt8](externalKeyData)
+        if bytes.first == 0x30 {
+            return derSPKI(bytes, sizeBits: sizeBits)
+        }
+        return prefixedSPKI(bytes, sizeBits: sizeBits)
+    }
+
+    /// Assembles the SPKI from the length-prefixed (non-DER) external representation.
+    private static func prefixedSPKI(_ bytes: [UInt8], sizeBits: Int) -> Data? {
+        let expectedModulusBytes = sizeBits / 8
+        guard bytes.count > 8 else { return nil }
+
+        let modulusByteCount = bigEndianUInt32(bytes.prefix(4))
+        // Both sizeBits/8 and sizeBits/8 + 1 bytes are accepted for the modulus:
+        // platforms may or may not include a sign-preserving leading 0x00, and
+        // spkiFromRSAPublicKey normalizes either convention to the canonical encoding.
+        guard modulusByteCount == expectedModulusBytes || modulusByteCount == expectedModulusBytes + 1 else {
+            return nil
+        }
+        let modulus = Array(bytes.dropFirst(4).prefix(modulusByteCount))
+        guard modulus.count == modulusByteCount else { return nil }
+
+        let exponentField = bytes.dropFirst(4 + modulusByteCount)
+        let exponentByteCount = bigEndianUInt32(exponentField.prefix(4))
+        // Require the exponent field to account for every remaining byte, so the RSA
+        // structural signature is exact and nothing but genuine RSA external data can
+        // be re-assembled as one.
+        guard exponentByteCount > 0, exponentField.count == 4 + exponentByteCount else { return nil }
+        let exponent = Array(exponentField.dropFirst(4).prefix(exponentByteCount))
+
+        return spkiFromRSAPublicKey(modulus: modulus, exponent: exponent)
+    }
+
+    /// Parses DER starting `0x30` as RSA key material: either a full SubjectPublicKeyInfo
+    /// (returned as-is once validated) or a bare RSAPublicKey SEQUENCE (re-wrapped
+    /// canonically). Returns nil unless the data encodes rsaEncryption with an
+    /// RSAPublicKey whose modulus is a `sizeBits`-bit value, so non-RSA DER can never be
+    /// hashed as an RSA SPKI.
+    private static func derSPKI(_ bytes: [UInt8], sizeBits: Int) -> Data? {
+        guard let outer = derTLV(bytes), outer.tag == 0x30 else { return nil }
+
+        // SubjectPublicKeyInfo ::= SEQUENCE { algorithm, subjectPublicKey BIT STRING }
+        if let algorithm = derTLV(outer.content),
+           algorithm.tag == 0x30,
+           Data(algorithm.content) == rsaEncryptionAlgorithmIdentifierContent,
+           let bitString = derTLV(Array(outer.content[algorithm.totalLength...])),
+           bitString.tag == 0x03,
+           bitString.content.first == 0x00,
+           algorithm.totalLength + bitString.totalLength == outer.content.count,
+           outer.totalLength == bytes.count,
+           let publicKey = derTLV(Array(bitString.content.dropFirst(1))),
+           publicKey.tag == 0x30,
+           rsaIntegerPayloads(publicKey.content, sizeBits: sizeBits) != nil {
+            return Data(bytes)
+        }
+
+        // RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
+        if let payloads = rsaIntegerPayloads(outer.content, sizeBits: sizeBits) {
+            return spkiFromRSAPublicKey(modulus: payloads.modulus, exponent: payloads.exponent)
+        }
+
+        return nil
+    }
+
+    /// INTEGER payloads of an RSAPublicKey SEQUENCE's content (modulus, exponent), or
+    /// nil unless exactly two INTEGERs consume the whole content and the modulus is a
+    /// `sizeBits`-bit value (DER's minimal encoding gives sizeBits/8 or sizeBits/8 + 1
+    /// payload bytes — the extra one is the leading 0x00 when the high bit is set).
+    private static func rsaIntegerPayloads(_ content: [UInt8], sizeBits: Int) -> (modulus: [UInt8], exponent: [UInt8])? {
+        guard let modulusTLV = derTLV(content),
+              modulusTLV.tag == 0x02,
+              !modulusTLV.content.isEmpty else { return nil }
+        let expectedModulusBytes = sizeBits / 8
+        guard modulusTLV.content.count == expectedModulusBytes || modulusTLV.content.count == expectedModulusBytes + 1 else {
+            return nil
+        }
+        guard let exponentTLV = derTLV(Array(content[modulusTLV.totalLength...])),
+              exponentTLV.tag == 0x02,
+              !exponentTLV.content.isEmpty,
+              modulusTLV.totalLength + exponentTLV.totalLength == content.count else { return nil }
+        return (modulusTLV.content, exponentTLV.content)
+    }
+
+    /// Canonical DER SubjectPublicKeyInfo for an RSA key from its INTEGER payloads.
+    /// Each payload is normalized first — leading 0x00s stripped, then a 0x00 prepended
+    /// when the first byte's high bit is set — so either platform convention (modulus
+    /// with or without the sign-preserving 0x00) converges to the same minimal DER
+    /// encoding as the openssl pipeline. The INTEGERs are built second so the SEQUENCE
+    /// lengths cover their full encodings (a 257-byte RSA modulus needs a long-form DER
+    /// length — getting this wrong shifts every byte after the header and breaks the hash).
+    private static func spkiFromRSAPublicKey(modulus: [UInt8], exponent: [UInt8]) -> Data {
+        let canonicalModulus = canonicalRSAInteger(modulus)
+        let canonicalExponent = canonicalRSAInteger(exponent)
+        let modulusInteger = Data([0x02]) + derLength(canonicalModulus.count) + Data(canonicalModulus)
+        let exponentInteger = Data([0x02]) + derLength(canonicalExponent.count) + Data(canonicalExponent)
+        var rsaPublicKey = Data([0x30])
+        rsaPublicKey.append(contentsOf: derLength(modulusInteger.count + exponentInteger.count))
+        rsaPublicKey.append(modulusInteger)
+        rsaPublicKey.append(exponentInteger)
+
+        var body = rsaEncryptionAlgorithmIdentifier
+        body.append(0x03)                                    // BIT STRING
+        body.append(contentsOf: derLength(rsaPublicKey.count + 1))
+        body.append(0x00)                                    // no unused bits
+        body.append(rsaPublicKey)
+
+        var spki = Data([0x30])
+        spki.append(contentsOf: derLength(body.count))
+        spki.append(body)
+        return spki
+    }
+
+    /// Minimal signed-INTEGER payload for `value`: leading 0x00s stripped (a single
+    /// 0x00 remains if the payload is otherwise empty), then a 0x00 prepended when the
+    /// first byte's high bit is set.
+    private static func canonicalRSAInteger(_ value: [UInt8]) -> [UInt8] {
+        var payload = value
+        while payload.count > 1, payload.first == 0x00 {
+            payload.removeFirst()
+        }
+        if let first = payload.first, first & 0x80 != 0 {
+            payload.insert(0x00, at: 0)
+        }
+        return payload
+    }
+
+    /// One DER TLV at the start of `bytes`: its tag, content, and total encoded length
+    /// (tag + length octets + content). Definite lengths only; nil on any malformed
+    /// or truncated encoding.
+    private static func derTLV(_ bytes: [UInt8]) -> (tag: UInt8, content: [UInt8], totalLength: Int)? {
+        guard bytes.count >= 2 else { return nil }
+        let tag = bytes[0]
+        let firstLengthByte = bytes[1]
+        var contentStart = 2
+        var length: Int
+        if firstLengthByte < 0x80 {
+            length = Int(firstLengthByte)
+        } else {
+            let lengthByteCount = Int(firstLengthByte & 0x7F)
+            guard lengthByteCount > 0, lengthByteCount <= 4, bytes.count >= contentStart + lengthByteCount else {
+                return nil
+            }
+            length = 0
+            for index in 0 ..< lengthByteCount {
+                length = (length << 8) | Int(bytes[contentStart + index])
+            }
+            contentStart += lengthByteCount
+        }
+        guard bytes.count >= contentStart + length else { return nil }
+        return (tag, Array(bytes[contentStart ..< contentStart + length]), contentStart + length)
+    }
+
+    /// Reads a 4-byte big-endian length prefix from Apple's RSA external representation.
+    private static func bigEndianUInt32(_ bytes: ArraySlice<UInt8>) -> Int {
+        guard bytes.count == 4 else { return 0 }
+        return bytes.reduce(Int(0)) { ($0 << 8) | Int($1) }
+    }
+
+    /// DER length octets: short form below 128, long form (0x80 | byte count) otherwise.
+    private static func derLength(_ length: Int) -> Data {
+        if length < 0x80 { return Data([UInt8(length)]) }
+        var bytes: [UInt8] = []
+        var value = length
+        while value > 0 {
+            bytes.insert(UInt8(value & 0xFF), at: 0)
+            value >>= 8
+        }
+        return Data([UInt8(0x80 | bytes.count)]) + Data(bytes)
+    }
 
     /// DER ASN.1 SPKI header for EC P-384 (secp384r1).
     /// Same shape as P-256 but with a 97-byte point (04 || X[48] || Y[48]).
